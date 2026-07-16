@@ -1,0 +1,343 @@
+#!/usr/bin/env bash
+#
+# dot — dotfiles management CLI
+#
+# Adapted from dmmulroy's `dot` (github.com/dmmulroy/.dotfiles), rewired for this
+# stack: fish default shell, brew bundle, GNU Stow, 1Password SSH, and skills
+# installed FROM the separate prezus/skills repo via `dot skills`.
+#
+# Removed from the original (doesn't fit here): SSH keygen (1Password), MonoLisa
+# font, jj, pi/vite-plus. The `;;`-delimited step registry was replaced with a
+# plain function sequence.
+
+set -euo pipefail
+
+# ─── Metadata ───────────────────────────────────────────────────────
+readonly SCRIPT_NAME="dot"
+readonly VERSION="1.0.0"
+DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DOTFILES_DIR
+
+# ─── Configuration ──────────────────────────────────────────────────
+readonly PACKAGES_DIR="${DOTFILES_DIR}/packages"
+readonly HOME_DIR="${DOTFILES_DIR}/home"
+# Skills live in a separate repo; dotfiles installs FROM it (see INSTALL.md).
+SKILLS_REPO="${SKILLS_REPO:-$HOME/Projects/skills}"
+SKILLS_SRC="${SKILLS_SRC:-$SKILLS_REPO/skills}"
+readonly OP_AGENT_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+
+# ─── Colors ─────────────────────────────────────────────────────────
+# ANSI-C quoting so the escapes are real bytes (render in both echo -e and heredocs)
+readonly RED=$'\033[0;31m' GREEN=$'\033[0;32m' YELLOW=$'\033[0;33m'
+readonly BLUE=$'\033[0;34m' CYAN=$'\033[0;36m' RESET=$'\033[0m' BOLD=$'\033[1m'
+
+CURRENT_STEP=0
+TOTAL_STEPS=0
+
+# ─── Helpers ────────────────────────────────────────────────────────
+print_header()  { echo -e "\n${BOLD}${BLUE}==>${RESET} ${BOLD}$1${RESET}"; }
+print_success() { echo -e "${GREEN}✓${RESET} $1"; }
+print_error()   { echo -e "${RED}✗${RESET} $1" >&2; }
+print_warning() { echo -e "${YELLOW}⚠${RESET} $1"; }
+print_info()    { echo -e "${CYAN}ℹ${RESET} $1"; }
+print_step()    { ((++CURRENT_STEP)); echo -e "\n${BOLD}[${CURRENT_STEP}/${TOTAL_STEPS}]${RESET} $1"; }
+
+command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+confirm() {
+    local prompt="${1:-Continue?}" default="${2:-n}" response
+    [[ "$default" == "y" ]] && prompt="$prompt [Y/n]: " || prompt="$prompt [y/N]: "
+    read -r -p "$prompt" response
+    case "$response" in
+        [yY][eE][sS]|[yY]) return 0 ;;
+        "") [[ "$default" == "y" ]] && return 0 || return 1 ;;
+        *) return 1 ;;
+    esac
+}
+
+check_dependencies() {
+    local missing=()
+    for dep in "$@"; do command_exists "$dep" || missing+=("$dep"); done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        print_error "Missing dependencies: ${missing[*]}"; return 1
+    fi
+}
+
+# Idempotent symlink with backup. _link <target-link> <source>
+# If the link path is a real file/dir, it's backed up to <path>.bak.<ts> first.
+_link() {
+    local link="$1" src="$2"
+    if [[ -L "$link" ]]; then
+        [[ "$(readlink "$link")" == "$src" ]] && { print_success "$link → already linked"; return 0; }
+        rm "$link"
+    elif [[ -e "$link" ]]; then
+        local bak="${link}.bak.$(date +%Y%m%d_%H%M%S)"
+        mv "$link" "$bak"
+        print_warning "backed up existing $link → $bak"
+    fi
+    mkdir -p "$(dirname "$link")"
+    ln -s "$src" "$link"
+    print_success "$link → $src"
+}
+
+# ─── Install helpers ────────────────────────────────────────────────
+_install_homebrew() {
+    if command_exists brew; then print_success "Homebrew already installed"; return 0; fi
+    print_info "Installing Homebrew (non-interactive)..."
+    NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+}
+
+_install_packages() {
+    [[ -f "${PACKAGES_DIR}/bundle" ]] || { print_error "No Brewfile at ${PACKAGES_DIR}/bundle"; return 1; }
+    print_info "Installing packages from packages/bundle..."
+    if brew bundle --file="${PACKAGES_DIR}/bundle"; then
+        print_success "All packages installed"; return 0
+    fi
+    # Resilient fallback: install one-by-one, record failures.
+    print_warning "Some packages failed; retrying individually..."
+    local failed=() pkg
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        if [[ "$line" =~ ^brew[[:space:]]+\"([^\"]+)\" ]]; then
+            pkg="${BASH_REMATCH[1]}"; brew install "$pkg" 2>/dev/null || failed+=("brew:$pkg")
+        elif [[ "$line" =~ ^cask[[:space:]]+\"([^\"]+)\" ]]; then
+            pkg="${BASH_REMATCH[1]}"; brew install --cask "$pkg" 2>/dev/null || failed+=("cask:$pkg")
+        fi
+    done < "${PACKAGES_DIR}/bundle"
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        local f="${PACKAGES_DIR}/failed_packages_$(date +%Y%m%d_%H%M%S).txt"
+        printf "%s\n" "${failed[@]}" > "$f"
+        print_warning "Failed: ${#failed[@]} (saved to $f) — retry with: dot retry-failed"
+    fi
+}
+
+_stow_dotfiles() {
+    command_exists stow || { print_error "GNU Stow not installed (brew install stow)"; return 1; }
+    print_info "Stowing home/ → ${HOME}..."
+    stow -R -v -d "${DOTFILES_DIR}" -t "${HOME}" home && print_success "Dotfiles stowed"
+}
+
+_setup_fish() {
+    command_exists fish || { print_error "fish not installed"; return 1; }
+    local fish_path; fish_path=$(command -v fish)
+    if ! grep -q "$fish_path" /etc/shells 2>/dev/null; then
+        print_info "Adding fish to /etc/shells (sudo)..."
+        echo "$fish_path" | sudo tee -a /etc/shells >/dev/null
+    fi
+    if [[ "$SHELL" != "$fish_path" ]]; then
+        confirm "Set fish as your default shell?" "y" && chsh -s "$fish_path" \
+            && print_success "Default shell → fish (log out/in to apply)"
+    else
+        print_success "fish is already the default shell"
+    fi
+    # Bootstrap fisher + install plugins from the tracked fish_plugins manifest.
+    print_info "Installing fish plugins via fisher..."
+    fish -c 'type -q fisher; or curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher; fisher update' \
+        >/dev/null 2>&1 && print_success "fish plugins installed" || print_warning "fisher/plugin install had issues"
+}
+
+# Maintain our SSH settings in ~/.ssh/config via an idempotent managed block:
+# the 1Password IdentityAgent (socket path is identical on every macOS install —
+# team id 2BUA8C4S2C) plus compatibility tweaks for legacy hosts/devices. The
+# OrbStack `Include` (OrbStack re-adds it; must stay at the top) and anything
+# outside the markers are left untouched. Enabling the agent itself is a GUI
+# toggle in the 1Password app and can't be scripted.
+_setup_ssh() {
+    local sock="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+    local cfg="$HOME/.ssh/config"
+    local begin="# >>> dot managed ssh >>>" end="# <<< dot managed ssh <<<"
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+    touch "$cfg"
+
+    # Strip any previous managed block (idempotent), then append a fresh one.
+    if grep -qF "$begin" "$cfg"; then
+        awk -v b="$begin" -v e="$end" '$0==b{s=1} !s{print} $0==e{s=0}' "$cfg" > "$cfg.tmp" \
+            && mv "$cfg.tmp" "$cfg"
+    fi
+    cat >> "$cfg" <<EOF
+$begin
+Host *
+    IdentityAgent "$sock"
+    PubkeyAcceptedAlgorithms +ssh-rsa
+    HostKeyAlgorithms +ssh-rsa
+    SetEnv TERM=xterm-256color
+
+Host 192.168.*
+    KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+$end
+EOF
+    chmod 600 "$cfg"
+    print_success "SSH config maintained (1Password agent + legacy-host compat)"
+    [[ -S "$sock" ]] && print_success "1Password SSH agent socket present" \
+        || print_warning "Agent socket missing — enable 1Password ▸ Settings ▸ Developer ▸ 'Use the SSH agent'"
+}
+
+# ─── Commands ───────────────────────────────────────────────────────
+cmd_init() {
+    print_header "Initializing dotfiles"
+    TOTAL_STEPS=6; CURRENT_STEP=0
+    print_step "Homebrew";        _install_homebrew    || return 1
+    print_step "Packages";        _install_packages    || return 1
+    print_step "Stow dotfiles";   _stow_dotfiles       || return 1
+    print_step "SSH config";      _setup_ssh           || print_warning "SSH setup incomplete"
+    print_step "Fish shell";      _setup_fish          || print_warning "fish setup incomplete"
+    print_step "Skills";          cmd_skills install   || print_warning "skills install incomplete"
+    print_header "Done 🎉  (restart your shell)"
+}
+
+cmd_update() {
+    print_header "Updating"
+    print_info "Pulling latest dotfiles..."
+    git -C "$DOTFILES_DIR" pull --ff-only && print_success "Repo updated" || print_warning "git pull skipped/failed"
+
+    if confirm "Update Homebrew packages?" "y"; then
+        # WARP/VPN latency can trip brew's curl speed-limit; pre-warm the API cache.
+        if pgrep -q "Cloudflare WARP" 2>/dev/null; then
+            local api="$HOME/Library/Caches/Homebrew/api"; mkdir -p "$api"
+            curl -fsSL -o "$api/formula.jws.json" https://formulae.brew.sh/api/formula.jws.json 2>/dev/null || true
+            curl -fsSL -o "$api/cask.jws.json"    https://formulae.brew.sh/api/cask.jws.json 2>/dev/null || true
+        fi
+        brew update && brew upgrade && print_success "Packages updated"
+    fi
+
+    confirm "Re-stow dotfiles?" "y" && _stow_dotfiles
+    confirm "Sync vendored skills?" "n" && cmd_skills update
+}
+
+cmd_doctor() {
+    print_header "Diagnostics"
+    local issues=0
+    command_exists brew  && print_success "Homebrew"      || { print_error "Homebrew missing"; ((++issues)); }
+    command_exists stow  && print_success "GNU Stow"      || { print_error "stow missing"; ((++issues)); }
+    command_exists fish  && print_success "fish"          || { print_error "fish missing"; ((++issues)); }
+    fish -c 'type -q fisher' 2>/dev/null && print_success "fisher" || print_warning "fisher not installed"
+
+    # Skills symlinks
+    if [[ "$(readlink "$HOME/.agents/skills" 2>/dev/null)" == "$SKILLS_SRC" ]]; then
+        print_success "~/.agents/skills → skills repo ($(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d " ") skills)"
+    else print_warning "~/.agents/skills not linked (run: dot skills install)"; fi
+    [[ "$(readlink "$HOME/.claude/skills" 2>/dev/null)" == "$HOME/.agents/skills" ]] \
+        && print_success "~/.claude/skills → ~/.agents/skills" \
+        || print_warning "~/.claude/skills not linked (run: dot skills install)"
+
+    # 1Password SSH + git signing
+    [[ -S "$OP_AGENT_SOCK" ]] && print_success "1Password SSH agent socket" || print_warning "1Password SSH agent socket not found"
+    [[ "$(git config --get gpg.format)" == "ssh" && -n "$(git config --get user.signingkey)" ]] \
+        && print_success "git SSH commit signing configured" || print_warning "git signing not configured"
+
+    # Broken symlinks under $HOME (shallow)
+    local broken=0 l
+    while IFS= read -r -d '' l; do [[ -e "$l" ]] || ((++broken)); done \
+        < <(find "$HOME" -maxdepth 3 -type l -print0 2>/dev/null)
+    [[ $broken -eq 0 ]] && print_success "No broken symlinks" || print_warning "$broken broken symlinks"
+
+    echo "$PATH" | grep -q "$DOTFILES_DIR" && print_success "dot is on PATH" \
+        || print_warning "add $DOTFILES_DIR to PATH so 'dot' works globally"
+
+    [[ $issues -eq 0 ]] && print_header "All critical checks passed ✨" || print_header "$issues critical issue(s)"
+}
+
+cmd_stow() { _stow_dotfiles; }
+
+cmd_edit() {
+    local editor="${EDITOR:-nvim}"
+    command_exists "$editor" && exec "$editor" "$DOTFILES_DIR" || { print_error "editor '$editor' not found"; return 1; }
+}
+
+cmd_retry_failed() {
+    local latest; latest=$(ls -t "${PACKAGES_DIR}"/failed_packages_*.txt 2>/dev/null | head -1)
+    [[ -n "$latest" ]] || { print_info "No failed-package files found"; return 0; }
+    print_info "Retrying from $latest"
+    local ok=0 still=()
+    while IFS=: read -r kind pkg; do
+        [[ -z "${pkg:-}" ]] && continue
+        if [[ "$kind" == cask ]]; then brew install --cask "$pkg" && ((++ok)) || still+=("cask:$pkg")
+        else brew install "$pkg" && ((++ok)) || still+=("brew:$pkg"); fi
+    done < "$latest"
+    print_success "Reinstalled $ok"; [[ ${#still[@]} -gt 0 ]] && print_warning "Still failing: ${still[*]}"
+    [[ ${#still[@]} -eq 0 ]] && rm -f "$latest"
+}
+
+cmd_check_packages() {
+    [[ -f "${PACKAGES_DIR}/bundle" ]] || { print_error "No packages/bundle"; return 1; }
+    brew bundle check --file="${PACKAGES_DIR}/bundle" --verbose
+}
+
+# ── Skills (install FROM prezus/skills; see INSTALL.md) ──
+cmd_skills() {
+    local sub="${1:-status}"; shift || true
+    case "$sub" in
+        install) _skills_install ;;
+        update)  _skills_update ;;
+        status)  _skills_status ;;
+        *) echo "usage: dot skills {install|update|status}" >&2; return 1 ;;
+    esac
+}
+
+_skills_install() {
+    [[ -d "$SKILLS_SRC" ]] || { print_error "skills source not found: $SKILLS_SRC (clone prezus/skills to $SKILLS_REPO)"; return 1; }
+    _link "$HOME/.agents/skills" "$SKILLS_SRC"
+    _link "$HOME/.claude/skills" "$HOME/.agents/skills"
+    _skills_status
+}
+
+_skills_update() {
+    local sync="$SKILLS_REPO/scripts/sync-vendored.sh"
+    if [[ -x "$sync" ]]; then
+        print_info "Syncing vendored skills (${MATT_SKILLS_REF:-upstream main})..."
+        (cd "$SKILLS_REPO" && "$sync")
+        print_info "Review the diff, then commit:"
+        git -C "$SKILLS_REPO" diff --stat
+    else
+        print_warning "No sync script at $sync — follow $SKILLS_REPO/VENDORING.md manually."
+    fi
+}
+
+_skills_status() {
+    print_info "skills source: $SKILLS_SRC ($(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d " ") skills)"
+    echo "  ~/.agents/skills → $(readlink "$HOME/.agents/skills" 2>/dev/null || echo '(not linked)')"
+    echo "  ~/.claude/skills → $(readlink "$HOME/.claude/skills" 2>/dev/null || echo '(not linked)')"
+    local mf="$SKILLS_REPO/vendor-manifest.json"
+    [[ -f "$mf" ]] && command_exists node && \
+        echo "  vendored @ $(node -e "process.stdout.write(require('$mf').vendors[0].pinnedCommit.slice(0,10)+' ('+require('$mf').vendors[0].vendoredOn+')')" 2>/dev/null || echo '?')"
+}
+
+cmd_help() {
+    cat <<EOF
+${BOLD}dot${RESET} — dotfiles management
+
+  ${BOLD}init${RESET}            Full setup: brew → packages → stow → fish → skills
+  ${BOLD}update${RESET}          git pull → brew update/upgrade → re-stow → (skills sync)
+  ${BOLD}doctor${RESET}          Health check (brew, stow, fish, skills links, 1Password, signing)
+  ${BOLD}stow${RESET}            Re-stow home/ into \$HOME
+  ${BOLD}ssh${RESET}             Maintain ~/.ssh/config (1Password agent + legacy compat)
+  ${BOLD}skills${RESET} <sub>    install | update | status  (skills come from $SKILLS_REPO)
+  ${BOLD}check-packages${RESET}  Show which Brewfile packages are missing
+  ${BOLD}retry-failed${RESET}    Reinstall packages that failed during init
+  ${BOLD}edit${RESET}            Open the dotfiles repo in \$EDITOR
+  ${BOLD}help${RESET}            This help    (--version for version)
+EOF
+}
+
+# ─── Dispatch ───────────────────────────────────────────────────────
+main() {
+    case "${1:-help}" in --version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;; esac
+    local cmd="${1:-help}"; shift || true
+    case "$cmd" in
+        init)           cmd_init "$@" ;;
+        update)         cmd_update "$@" ;;
+        doctor)         cmd_doctor "$@" ;;
+        stow)           cmd_stow "$@" ;;
+        ssh)            _setup_ssh "$@" ;;
+        skills)         cmd_skills "$@" ;;
+        check-packages) cmd_check_packages "$@" ;;
+        retry-failed)   cmd_retry_failed "$@" ;;
+        edit)           cmd_edit "$@" ;;
+        help|-h|--help) cmd_help ;;
+        *) print_error "unknown command: $cmd"; cmd_help; exit 1 ;;
+    esac
+}
+
+main "$@"

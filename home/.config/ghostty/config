@@ -1,0 +1,36 @@
+theme = Gruvbox Dark
+
+font-size = 14
+#font-family = "Victor Mono"
+font-family-bold = "Monaspace Xeon Var"
+font-family-italic = "Monaspace Radon Var"
+#font-family-bold-italic = "Operator Mono SSm Lig"
+
+font-style = Regular
+font-style-italic = Regular Italic
+font-style-bold = Bold
+font-style-bold-italic = Bold Italic
+
+
+
+background-blur-radius = 20
+mouse-hide-while-typing = true
+window-decoration = true
+cursor-style-blink = true
+
+macos-option-as-alt = true
+macos-window-shadow = true
+macos-titlebar-proxy-icon = hidden
+
+
+#background-opacity = 0.8
+# background-blur-radius = 20
+
+clipboard-read = allow
+clipboard-paste-protection = false
+clipboard-write = allow
+
+keybind = shift+enter=text:\n
+
+shell-integration = zsh
+quit-after-last-window-closed = true

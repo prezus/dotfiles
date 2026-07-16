@@ -1,0 +1,79 @@
+# Dotfiles .gitignore
+#
+# NOTE: tracked config lives under home/ and legitimately starts with a dot
+# (home/.config, home/.agents, ...). Do NOT add blanket rules like `.*` — they
+# would ignore the very dotfiles this repo exists to track. Ignore only cruft,
+# machine-local overrides, and — most importantly — secrets.
+
+# ─── Secrets & credentials (never commit) ───────────────────────────
+# SSH / GPG / TLS keys
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.key
+*.pem
+*.p12
+*.pfx
+*_rsa
+*_ed25519
+# Known secret-bearing files
+.netrc
+.pgpass
+**/.aws/credentials
+**/.ssh/known_hosts
+**/*secret*
+**/*credentials*
+**/*.token
+.env
+.env.*
+!.env.example
+
+# ─── Tool configs that embed tokens (never track, even if the tool ──
+#     dir is otherwise stowed — track the sibling non-secret config only)
+**/gh/hosts.yml            # GitHub CLI OAuth token
+**/github-copilot/apps.json
+**/op/config               # 1Password CLI account config
+**/.config/fabric/.env
+
+# ─── Machine-local overrides (per-host, not shared) ─────────────────
+*.local
+**/*.local.*
+home/.config/**/local.*
+*.private
+# ...but the XDG ~/.local dir is NOT a machine-local override — keep it tracked
+!home/.local/
+!home/.local/**
+
+# ─── Package/tooling artifacts ──────────────────────────────────────
+node_modules/
+.npm/
+*.log
+
+# ─── Editors / IDEs ─────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── OS cruft ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ─── Fisher-managed fish plugin files ───────────────────────────────
+#     Derived from home/.config/fish/fish_plugins; restored with `fisher update`.
+#     We track our OWN config.fish + conf.d/*.fish + fish_plugins, not these.
+home/.config/fish/functions/
+home/.config/fish/completions/
+home/.config/fish/conf.d/git.fish
+
+# ─── Stow / install runtime ─────────────────────────────────────────
+# Backups the install script makes before replacing a real dir/symlink.
+*.bak
+*.bak.*

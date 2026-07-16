@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "tui": {
+    "theme": "system"
+  },
+  "plugin": [
+    "@franlol/opencode-md-table-formatter@0.0.3",
+    "@tarquinen/opencode-dcp@latest",
+    "opencode-anthropic-auth@0.0.8"
+  ],
+  "mcp": {
+    "pencil": {
+      "command": [
+        "/Applications/Pencil.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-arm64",
+        "--app",
+        "desktop"
+      ],
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}
