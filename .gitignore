@@ -75,6 +75,7 @@ home/.config/fish/conf.d/git.fish
 # ...but keep the tool completions we author ourselves
 !home/.config/fish/completions/vp.fish
 !home/.config/fish/completions/vpr.fish
+!home/.config/fish/completions/dotfiles.fish
 
 # ─── Stow / install runtime ─────────────────────────────────────────
 # Backups the install script makes before replacing a real dir/symlink.

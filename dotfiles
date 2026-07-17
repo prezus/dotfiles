@@ -397,7 +397,7 @@ _skills_update() {
         print_info "Syncing vendored skills (${MATT_SKILLS_REF:-upstream main})..."
         (cd "$SKILLS_REPO" && "$sync")
         print_info "Review the diff, then commit:"
-        git -C "$SKILLS_REPO" diff --stat
+        git -C "$SKILLS_REPO" --no-pager diff --stat
     else
         print_warning "No sync script at $sync — follow $SKILLS_REPO/VENDORING.md manually."
     fi
@@ -410,6 +410,25 @@ _skills_status() {
     local mf="$SKILLS_REPO/vendor-manifest.json"
     [[ -f "$mf" ]] && command_exists node && \
         echo "  vendored @ $(node -e "process.stdout.write(require('$mf').vendors[0].pinnedCommit.slice(0,10)+' ('+require('$mf').vendors[0].vendoredOn+')')" 2>/dev/null || echo '?')"
+}
+
+# Machine-readable command list (name<TAB>description), one per line. SINGLE SOURCE
+# of truth for the fish completion — add new subcommands HERE and completions follow.
+_print_commands() {
+    printf '%s\n' \
+        $'init\tFull setup: brew/rust/packages/bun/vite+/stow/ssh/fish/skills' \
+        $'update\tUpdate brew + rust/cargo/go/bun/fisher, re-stow, sync skills' \
+        $'doctor\tHealth check (brew, stow, fish, skills links, 1Password, signing)' \
+        $'stow\tRe-symlink home/ into $HOME (--adopt on an existing machine)' \
+        $'ssh\tMaintain ~/.ssh/config (1Password agent + legacy compat)' \
+        $'bun\tInstall JS globals from packages/bun-global.txt' \
+        $'viteplus\tInstall Vite+ (vp/vpr)' \
+        $'rust\tInstall rustup toolchains/targets from packages/rust.txt' \
+        $'skills\tinstall | update | status (from prezus/skills)' \
+        $'check-packages\tShow which Brewfile packages are missing' \
+        $'retry-failed\tReinstall packages that failed during init' \
+        $'edit\tOpen the dotfiles repo in $EDITOR' \
+        $'help\tShow this help'
 }
 
 cmd_help() {
@@ -449,6 +468,7 @@ main() {
         check-packages) cmd_check_packages "$@" ;;
         retry-failed)   cmd_retry_failed "$@" ;;
         edit)           cmd_edit "$@" ;;
+        __commands)     _print_commands ;;   # hidden: powers the fish completion
         help|-h|--help) cmd_help ;;
         *) print_error "unknown command: $cmd"; cmd_help; exit 1 ;;
     esac

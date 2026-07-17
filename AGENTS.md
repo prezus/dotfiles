@@ -96,6 +96,7 @@ dotfiles check-packages / retry-failed / edit
 
 ## NOTES
 
-- `dotfiles` is ~330 lines (adapted from dmmulroy's, trimmed to this stack) — keep it thin; if it grows, split into `lib/` or a real language, and never reintroduce the delimited-string step registry.
+- `dotfiles` is ~370 lines (adapted from dmmulroy's, trimmed to this stack) — keep it thin; if it grows, split into `lib/` or a real language, and never reintroduce the delimited-string step registry.
+- **Adding a subcommand:** add it to the `case` dispatch **and** to `_print_commands()` (name<TAB>desc). The fish completion (`home/.config/fish/completions/dotfiles.fish`) reads `dotfiles __commands` dynamically, so it auto-updates from `_print_commands` — no separate completion edit needed.
 - `packages/bundle` is a `brew bundle dump` snapshot + a hand-added tail; re-dumping with `--force` overwrites hand edits, so review after.
 - OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it.
