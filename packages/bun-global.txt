@@ -1,0 +1,7 @@
+# Global CLIs managed by bun (JS-only tools with no Homebrew formula).
+# Anything available in Homebrew lives in packages/bundle instead.
+# Installed by `dot bun` / `dot init` via: bun add -g <each line>
+electron-builder
+sharp-cli
+svgexport
+svelte-language-server

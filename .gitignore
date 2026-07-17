@@ -70,8 +70,11 @@ Thumbs.db
 #     Derived from home/.config/fish/fish_plugins; restored with `fisher update`.
 #     We track our OWN config.fish + conf.d/*.fish + fish_plugins, not these.
 home/.config/fish/functions/
-home/.config/fish/completions/
+home/.config/fish/completions/*
 home/.config/fish/conf.d/git.fish
+# ...but keep the tool completions we author ourselves
+!home/.config/fish/completions/vp.fish
+!home/.config/fish/completions/vpr.fish
 
 # ─── Stow / install runtime ─────────────────────────────────────────
 # Backups the install script makes before replacing a real dir/symlink.
