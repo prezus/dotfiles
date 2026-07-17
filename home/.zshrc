@@ -64,6 +64,9 @@ export PATH="$PATH:$HOME/go/bin"
 # Application paths
 export PATH="$PATH:$HOME/.lmstudio/bin"
 
+# dotfiles CLI (~/Projects/dotfiles/dotfiles)
+export PATH="$PATH:$HOME/Projects/dotfiles"
+
 # -----------------------------------------------------------------------------
 # Aliases
 # -----------------------------------------------------------------------------

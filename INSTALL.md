@@ -1,13 +1,13 @@
-# Install & `dot skills` spec
+# Install & `dotfiles skills` spec
 
-How skills get onto a machine, and the exact behaviour the `dot skills` subcommands must
+How skills get onto a machine, and the exact behaviour the `dotfiles skills` subcommands must
 implement. The scripts are written by hand — this is their spec and acceptance criteria.
 
 ## Decision: skills repo stays separate; dotfiles installs from it
 
 Skills live in the separate [prezus/skills](https://github.com/prezus/skills) repo (our own
 skills + vendored ones, all committed there). This repo does **not** store skill files. It
-**installs from** `prezus/skills` by symlink and drives updates through `dot skills`. One
+**installs from** `prezus/skills` by symlink and drives updates through `dotfiles skills`. One
 source of truth, no duplication; a committed vendor-sync in `prezus/skills` is live
 everywhere instantly because agents read through the symlinks.
 
@@ -24,7 +24,7 @@ everywhere instantly because agents read through the symlinks.
 ~/.claude/skills  ->  ~/.agents/skills           # Claude Code (only reads ~/.claude/skills)
 ```
 
-## `dot skills install` — spec
+## `dotfiles skills install` — spec
 
 Idempotent; safe to re-run. Must:
 
@@ -42,7 +42,7 @@ Idempotent; safe to re-run. Must:
 4. **Verify.** Print both resolved targets and `ls -1 ~/.agents/skills | wc -l`. Exit zero
    only if both links resolve to `$SKILLS_SRC`.
 
-## `dot skills update` — spec
+## `dotfiles skills update` — spec
 
 Re-syncs the vendored skills in `prezus/skills`, then hands off to a human. Must:
 
@@ -50,13 +50,13 @@ Re-syncs the vendored skills in `prezus/skills`, then hands off to a human. Must
 2. Run the vendoring sync per `prezus/skills/VENDORING.md`: clone upstream at a ref into
    `repos/` (gitignored) → flatten the shipped set into `skills/` → update
    `vendor-manifest.json` (pinned commit, date, skill list). Accept a ref override, e.g.
-   `MATT_SKILLS_REF=<sha> dot skills update`.
+   `MATT_SKILLS_REF=<sha> dotfiles skills update`.
 3. **Stop for human review.** Show `git -C "$SKILLS_REPO" diff --stat` and instruct the user
    to read the diff and commit. **Never auto-commit.**
 4. No reinstall afterward — the symlinks already point at `skills/`, so a committed sync is
    immediately live in all agents.
 
-## `dot skills status` — spec
+## `dotfiles skills status` — spec
 
 Read-only. Print:
 - resolved target of `~/.agents/skills` and `~/.claude/skills` (flag if either is missing or
@@ -66,8 +66,8 @@ Read-only. Print:
 
 ## GNU Stow (other dotfiles)
 
-Non-skill config lives under `home/` and is linked with `dot stow` (`stow -t "$HOME" home`).
-The skills symlinks are handled by `dot skills`, **not** stow — they cross into
+Non-skill config lives under `home/` and is linked with `dotfiles stow` (`stow -t "$HOME" home`).
+The skills symlinks are handled by `dotfiles skills`, **not** stow — they cross into
 `prezus/skills` and chain through each other, which stow doesn't model cleanly.
 
 ## Verifying discovery per agent

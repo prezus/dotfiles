@@ -1,0 +1,23 @@
+# Rust toolchain managed by `dot rust` (rustup — not brew, for cross/embedded targets).
+# Format: '<kind> <value>'. Applied to rustup; cargo global tools live in packages/bundle.
+
+# Toolchains
+toolchain stable
+toolchain nightly
+
+# Components (added to the default toolchain; rust-analyzer comes from brew)
+component clippy
+component rustfmt
+component rust-src
+
+# Targets (cross-compile / embedded)
+target aarch64-apple-ios
+target aarch64-apple-ios-sim
+target aarch64-unknown-linux-gnu
+target riscv32imac-unknown-none-elf
+target riscv32imafc-unknown-none-elf
+target riscv32imc-unknown-none-elf
+target x86_64-apple-ios
+
+# ESP (Xtensa) toolchain — installed via 'espup' (a packages/bundle cargo tool)
+esp true

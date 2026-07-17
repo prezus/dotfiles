@@ -10,6 +10,7 @@ fish_add_path --move --append $HOME/go/bin
 fish_add_path --move --append $HOME/.lmstudio/bin
 fish_add_path --move --append $HOME/.cargo/bin        # replaces `source ~/.cargo/env`
 fish_add_path --move --append $HOME/.bun/bin
+fish_add_path --move --append $HOME/Projects/dotfiles # the `dotfiles` CLI
 
 # High priority — move to the front (last call ends up first)
 fish_add_path --move /opt/homebrew/opt/libpq/bin

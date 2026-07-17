@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# dot — dotfiles management CLI
+# dotfiles — dotfiles management CLI
 #
 # Adapted from dmmulroy's `dot` (github.com/dmmulroy/.dotfiles), rewired for this
 # stack: fish default shell, brew bundle, GNU Stow, 1Password SSH, and skills
-# installed FROM the separate prezus/skills repo via `dot skills`.
+# installed FROM the separate prezus/skills repo via `dotfiles skills`.
 #
 # Removed from the original (doesn't fit here): SSH keygen (1Password), MonoLisa
 # font, jj. The `;;`-delimited step registry was replaced with a plain function
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # ─── Metadata ───────────────────────────────────────────────────────
-readonly SCRIPT_NAME="dot"
+readonly SCRIPT_NAME="dotfiles"
 readonly VERSION="1.0.0"
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly DOTFILES_DIR
@@ -89,6 +89,44 @@ _install_homebrew() {
     eval "$(/opt/homebrew/bin/brew shellenv)"
 }
 
+# Rust toolchain via rustup, from packages/rust.txt. NOT in the Brewfile — brew's
+# single `rust` can't manage the cross/embedded toolchains + targets you use.
+# Runs BEFORE _install_packages so `cargo` exists for the bundle's `cargo "…"` tools.
+_install_rust() {
+    local list="${PACKAGES_DIR}/rust.txt" kind val
+    if ! command_exists rustup; then
+        print_info "Installing rustup..."
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
+            || { print_error "rustup install failed"; return 1; }
+    else
+        print_success "rustup already installed"
+    fi
+    [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+    export PATH="$HOME/.cargo/bin:$PATH"
+    [[ -f "$list" ]] || { print_info "no rust.txt; skipping toolchains/targets"; return 0; }
+    while read -r kind val; do
+        [[ -z "${kind:-}" || "$kind" == \#* ]] && continue
+        case "$kind" in
+            toolchain) rustup toolchain install "$val" --no-self-update >/dev/null 2>&1 && print_success "toolchain: $val" ;;
+            component) rustup component add "$val" >/dev/null 2>&1 && print_success "component: $val" ;;
+            target)    rustup target add "$val" >/dev/null 2>&1 && print_success "target: $val" ;;
+        esac
+    done < "$list"
+}
+
+# ESP (Xtensa) Rust toolchain via espup — separate step because `espup` is a
+# bundle cargo tool, so this must run AFTER _install_packages.
+_install_rust_esp() {
+    grep -q '^esp[[:space:]]' "${PACKAGES_DIR}/rust.txt" 2>/dev/null || return 0
+    command_exists espup || { print_warning "espup not installed yet (comes from packages/bundle); skipping ESP toolchain"; return 0; }
+    if rustup toolchain list 2>/dev/null | grep -q '^esp'; then
+        print_success "ESP (Xtensa) toolchain already installed"
+    else
+        print_info "Installing ESP (Xtensa) toolchain via espup..."
+        espup install && print_success "ESP toolchain installed" || print_warning "espup install failed"
+    fi
+}
+
 _install_packages() {
     [[ -f "${PACKAGES_DIR}/bundle" ]] || { print_error "No Brewfile at ${PACKAGES_DIR}/bundle"; return 1; }
     print_info "Installing packages from packages/bundle..."
@@ -109,14 +147,25 @@ _install_packages() {
     if [[ ${#failed[@]} -gt 0 ]]; then
         local f="${PACKAGES_DIR}/failed_packages_$(date +%Y%m%d_%H%M%S).txt"
         printf "%s\n" "${failed[@]}" > "$f"
-        print_warning "Failed: ${#failed[@]} (saved to $f) — retry with: dot retry-failed"
+        print_warning "Failed: ${#failed[@]} (saved to $f) — retry with: dotfiles retry-failed"
     fi
 }
 
 _stow_dotfiles() {
     command_exists stow || { print_error "GNU Stow not installed (brew install stow)"; return 1; }
+    local extra=()
+    if [[ "${1:-}" == "--adopt" ]]; then
+        extra+=(--adopt)
+        print_warning "--adopt: existing files are moved INTO the repo (safe only if they match; review 'git diff' after)"
+    fi
     print_info "Stowing home/ → ${HOME}..."
-    stow -R -v -d "${DOTFILES_DIR}" -t "${HOME}" home && print_success "Dotfiles stowed"
+    if stow -R "${extra[@]}" -v -d "${DOTFILES_DIR}" -t "${HOME}" home; then
+        print_success "Dotfiles stowed"
+    else
+        print_error "stow conflicts: real files already exist at those paths."
+        print_info  "First-time on an existing machine? Run: dotfiles stow --adopt  (adopts them; then check 'git -C $DOTFILES_DIR diff')"
+        return 1
+    fi
 }
 
 # Vite+ (https://vite.plus) — installs to ~/.vite-plus/bin. Fish integration
@@ -124,10 +173,17 @@ _stow_dotfiles() {
 _install_viteplus() {
     if [[ -x "$HOME/.vite-plus/bin/vp" ]]; then
         print_success "Vite+ already installed ($("$HOME/.vite-plus/bin/vp" --version 2>/dev/null | head -1))"
-        return 0
+    else
+        print_info "Installing Vite+ (curl https://vite.plus | bash)..."
+        VP_NODE_MANAGER=no curl -fsSL https://vite.plus | bash \
+            || { print_warning "Vite+ install failed"; return 1; }
+        print_success "Vite+ installed"
     fi
-    print_info "Installing Vite+ (curl https://vite.plus | bash)..."
-    curl -fsSL https://vite.plus | bash && print_success "Vite+ installed" || { print_warning "Vite+ install failed"; return 1; }
+    # The installer writes its OWN *eager* fish integration to conf.d/vite-plus.fish
+    # (runs `vp` at every shell startup). We ship a *lazy* version (stowed from the
+    # repo), so remove the installer's so `dotfiles stow` lays ours down.
+    rm -f "$HOME/.config/fish/conf.d/vite-plus.fish"
+    print_info "using our lazy Vite+ fish integration (applied by 'dotfiles stow')"
 }
 
 # Install global JS CLIs that have no Homebrew formula (listed in
@@ -173,7 +229,7 @@ _setup_fish() {
 _setup_ssh() {
     local sock="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
     local cfg="$HOME/.ssh/config"
-    local begin="# >>> dot managed ssh >>>" end="# <<< dot managed ssh <<<"
+    local begin="# >>> dotfiles managed ssh >>>" end="# <<< dotfiles managed ssh <<<"
     mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
     touch "$cfg"
 
@@ -203,9 +259,11 @@ EOF
 # ─── Commands ───────────────────────────────────────────────────────
 cmd_init() {
     print_header "Initializing dotfiles"
-    TOTAL_STEPS=8; CURRENT_STEP=0
+    TOTAL_STEPS=10; CURRENT_STEP=0
     print_step "Homebrew";        _install_homebrew    || return 1
+    print_step "Rust (rustup)";   _install_rust        || print_warning "rust setup incomplete"
     print_step "Packages";        _install_packages    || return 1
+    print_step "Rust (ESP)";      _install_rust_esp    || true
     print_step "Bun globals";     _install_bun_globals || print_warning "bun globals incomplete"
     print_step "Vite+";           _install_viteplus    || print_warning "Vite+ install incomplete"
     print_step "Stow dotfiles";   _stow_dotfiles       || return 1
@@ -230,8 +288,26 @@ cmd_update() {
         brew update && brew upgrade && print_success "Packages updated"
     fi
 
+    confirm "Update rustup / cargo / go / bun / fisher tools?" "y" && _update_extras
     confirm "Re-stow dotfiles?" "y" && _stow_dotfiles
     confirm "Sync vendored skills?" "n" && cmd_skills update
+}
+
+# Update the non-brew package sources dot manages (brew upgrade doesn't touch these).
+_update_extras() {
+    command_exists rustup && { print_info "rustup update..."; rustup update; }
+    command_exists cargo-install-update && { print_info "cargo install-update -a..."; cargo install-update -a; }
+    if command_exists go && [[ -f "${PACKAGES_DIR}/bundle" ]]; then
+        print_info "updating go tools (go install …@latest)..."
+        local line
+        while IFS= read -r line; do
+            [[ "$line" =~ ^go[[:space:]]+\"([^\"]+)\" ]] && go install "${BASH_REMATCH[1]}@latest"
+        done < "${PACKAGES_DIR}/bundle"
+    fi
+    command_exists bun && { print_info "bun update -g..."; bun update -g; }
+    fish -c 'type -q fisher; and fisher update' >/dev/null 2>&1 && print_success "fisher plugins updated"
+    [[ -x "$HOME/.vite-plus/bin/vp" ]] && print_info "Vite+: run 'vp' self-update manually if desired"
+    print_success "extras updated"
 }
 
 cmd_doctor() {
@@ -245,10 +321,10 @@ cmd_doctor() {
     # Skills symlinks
     if [[ "$(readlink "$HOME/.agents/skills" 2>/dev/null)" == "$SKILLS_SRC" ]]; then
         print_success "~/.agents/skills → skills repo ($(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d " ") skills)"
-    else print_warning "~/.agents/skills not linked (run: dot skills install)"; fi
+    else print_warning "~/.agents/skills not linked (run: dotfiles skills install)"; fi
     [[ "$(readlink "$HOME/.claude/skills" 2>/dev/null)" == "$HOME/.agents/skills" ]] \
         && print_success "~/.claude/skills → ~/.agents/skills" \
-        || print_warning "~/.claude/skills not linked (run: dot skills install)"
+        || print_warning "~/.claude/skills not linked (run: dotfiles skills install)"
 
     # 1Password SSH + git signing
     [[ -S "$OP_AGENT_SOCK" ]] && print_success "1Password SSH agent socket" || print_warning "1Password SSH agent socket not found"
@@ -261,13 +337,13 @@ cmd_doctor() {
         < <(find "$HOME" -maxdepth 3 -type l -print0 2>/dev/null)
     [[ $broken -eq 0 ]] && print_success "No broken symlinks" || print_warning "$broken broken symlinks"
 
-    echo "$PATH" | grep -q "$DOTFILES_DIR" && print_success "dot is on PATH" \
-        || print_warning "add $DOTFILES_DIR to PATH so 'dot' works globally"
+    echo "$PATH" | grep -q "$DOTFILES_DIR" && print_success "dotfiles is on PATH" \
+        || print_warning "add $DOTFILES_DIR to PATH so 'dotfiles' works globally"
 
     [[ $issues -eq 0 ]] && print_header "All critical checks passed ✨" || print_header "$issues critical issue(s)"
 }
 
-cmd_stow() { _stow_dotfiles; }
+cmd_stow() { _stow_dotfiles "$@"; }
 
 cmd_edit() {
     local editor="${EDITOR:-nvim}"
@@ -300,12 +376,16 @@ cmd_skills() {
         install) _skills_install ;;
         update)  _skills_update ;;
         status)  _skills_status ;;
-        *) echo "usage: dot skills {install|update|status}" >&2; return 1 ;;
+        *) echo "usage: dotfiles skills {install|update|status}" >&2; return 1 ;;
     esac
 }
 
 _skills_install() {
-    [[ -d "$SKILLS_SRC" ]] || { print_error "skills source not found: $SKILLS_SRC (clone prezus/skills to $SKILLS_REPO)"; return 1; }
+    if [[ ! -d "$SKILLS_SRC" ]]; then
+        print_info "Cloning prezus/skills → $SKILLS_REPO (public, HTTPS)..."
+        git clone https://github.com/prezus/skills.git "$SKILLS_REPO" \
+            || { print_error "failed to clone prezus/skills"; return 1; }
+    fi
     _link "$HOME/.agents/skills" "$SKILLS_SRC"
     _link "$HOME/.claude/skills" "$HOME/.agents/skills"
     _skills_status
@@ -334,15 +414,16 @@ _skills_status() {
 
 cmd_help() {
     cat <<EOF
-${BOLD}dot${RESET} — dotfiles management
+${BOLD}dotfiles${RESET} — dotfiles management
 
-  ${BOLD}init${RESET}            Full setup: brew → packages → stow → fish → skills
-  ${BOLD}update${RESET}          git pull → brew update/upgrade → re-stow → (skills sync)
+  ${BOLD}init${RESET}            Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills
+  ${BOLD}update${RESET}          git pull → brew + rust/cargo/go/bun/fisher → re-stow → (skills sync)
+  ${BOLD}stow${RESET} [--adopt]  Re-symlink home/ → \$HOME  (--adopt on an existing machine)
   ${BOLD}doctor${RESET}          Health check (brew, stow, fish, skills links, 1Password, signing)
-  ${BOLD}stow${RESET}            Re-stow home/ into \$HOME
   ${BOLD}ssh${RESET}             Maintain ~/.ssh/config (1Password agent + legacy compat)
   ${BOLD}bun${RESET}             Install global JS CLIs from packages/bun-global.txt
   ${BOLD}viteplus${RESET}        Install Vite+ (vp/vpr) to ~/.vite-plus
+  ${BOLD}rust${RESET}            Install rustup + toolchains/targets from packages/rust.txt (+ ESP)
   ${BOLD}skills${RESET} <sub>    install | update | status  (skills come from $SKILLS_REPO)
   ${BOLD}check-packages${RESET}  Show which Brewfile packages are missing
   ${BOLD}retry-failed${RESET}    Reinstall packages that failed during init
@@ -363,6 +444,7 @@ main() {
         ssh)            _setup_ssh "$@" ;;
         bun)            _install_bun_globals "$@" ;;
         viteplus)       _install_viteplus "$@" ;;
+        rust)           _install_rust && _install_rust_esp ;;
         skills)         cmd_skills "$@" ;;
         check-packages) cmd_check_packages "$@" ;;
         retry-failed)   cmd_retry_failed "$@" ;;
