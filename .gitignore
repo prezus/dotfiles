@@ -80,6 +80,16 @@ home/.config/fish/conf.d/git.fish
 !home/.config/fish/completions/dotfiles.fish
 !home/.config/fish/functions/theme_gruvbox.fish
 
+# ─── Pi agent config ────────────────────────────────────────────────
+#     Ignore all of agent/ by default (auth.json holds secrets, sessions/ is
+#     runtime state), then un-ignore only what we author: settings, themes,
+#     skills. auth.json + sessions/ stay LOCAL — never symlinked or committed.
+home/.pi/agent/*
+!home/.pi/agent/settings.json
+!home/.pi/agent/themes/
+# NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
+# the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
+
 # ─── Stow / install runtime ─────────────────────────────────────────
 # Backups the install script makes before replacing a real dir/symlink.
 *.bak

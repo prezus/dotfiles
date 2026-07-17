@@ -366,8 +366,18 @@ cmd_doctor() {
     [[ "$(readlink "$HOME/.claude/skills" 2>/dev/null)" == "$HOME/.agents/skills" ]] \
         && print_success "~/.claude/skills → ~/.agents/skills" \
         || print_warning "~/.claude/skills — not linked (dotfiles skills install)"
+    if [[ -d "$HOME/.pi/agent" ]]; then   # Pi consumes the same canonical pool
+        [[ "$(readlink "$HOME/.pi/agent/skills" 2>/dev/null)" == "$HOME/.agents/skills" ]] \
+            && print_success "~/.pi/agent/skills → ~/.agents/skills" \
+            || print_warning "~/.pi/agent/skills — not linked (dotfiles skills install)"
+    fi
     if [[ -f "$SKILLS_REPO/vendor-manifest.json" ]] && command_exists node; then
-        print_info "vendored: $(node -e "const v=require('$SKILLS_REPO/vendor-manifest.json').vendors[0];process.stdout.write(v.source+' @ '+v.pinnedCommit.slice(0,10)+' ('+v.vendoredOn+')')" 2>/dev/null)"
+        print_info "vendored: $(node -e "require('$SKILLS_REPO/vendor-manifest.json').vendors.forEach(v=>console.log(v.source+' @ '+v.pinnedCommit.slice(0,10)+' ('+v.vendoredOn+')'))" 2>/dev/null | paste -sd' · ' -)"
+        if [[ -x "$SKILLS_REPO/scripts/verify-vendored.sh" ]]; then
+            "$SKILLS_REPO/scripts/verify-vendored.sh" >/dev/null 2>&1 \
+                && print_success "vendored integrity — all hashes match" \
+                || { print_warning "vendored integrity — drift detected (cd $SKILLS_REPO && scripts/verify-vendored.sh)"; }
+        fi
     fi
 
     echo -e "\n${BOLD}Security${RESET}"
@@ -424,7 +434,8 @@ cmd_skills() {
         install) _skills_install ;;
         update)  _skills_update ;;
         status)  _skills_status ;;
-        *) echo "usage: dotfiles skills {install|update|status}" >&2; return 1 ;;
+        verify)  _skills_verify ;;
+        *) echo "usage: dotfiles skills {install|update|status|verify}" >&2; return 1 ;;
     esac
 }
 
@@ -436,14 +447,16 @@ _skills_install() {
     fi
     _link "$HOME/.agents/skills" "$SKILLS_SRC"
     _link "$HOME/.claude/skills" "$HOME/.agents/skills"
+    # Pi reads the same canonical pool — link it too, but only if Pi is set up here.
+    [[ -d "$HOME/.pi/agent" ]] && _link "$HOME/.pi/agent/skills" "$HOME/.agents/skills"
     _skills_status
 }
 
 _skills_update() {
     local sync="$SKILLS_REPO/scripts/sync-vendored.sh"
     if [[ -x "$sync" ]]; then
-        print_info "Syncing vendored skills (${MATT_SKILLS_REF:-upstream main})..."
-        (cd "$SKILLS_REPO" && "$sync")
+        print_info "Syncing vendored skills (all vendors @ pinnedRef; set VENDOR=/REF= to scope)..."
+        (cd "$SKILLS_REPO" && VENDOR="${VENDOR:-}" REF="${REF:-}" "$sync")
         print_info "Review the diff, then commit:"
         git -C "$SKILLS_REPO" --no-pager diff --stat
     else
@@ -451,13 +464,20 @@ _skills_update() {
     fi
 }
 
+_skills_verify() {
+    local vscript="$SKILLS_REPO/scripts/verify-vendored.sh"
+    [[ -x "$vscript" ]] || { print_warning "No verify script at $vscript"; return 1; }
+    (cd "$SKILLS_REPO" && "$vscript")
+}
+
 _skills_status() {
     print_info "skills source: $SKILLS_SRC ($(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d " ") skills)"
     echo "  ~/.agents/skills → $(readlink "$HOME/.agents/skills" 2>/dev/null || echo '(not linked)')"
     echo "  ~/.claude/skills → $(readlink "$HOME/.claude/skills" 2>/dev/null || echo '(not linked)')"
+    [[ -d "$HOME/.pi/agent" ]] && echo "  ~/.pi/agent/skills → $(readlink "$HOME/.pi/agent/skills" 2>/dev/null || echo '(not linked)')"
     local mf="$SKILLS_REPO/vendor-manifest.json"
     [[ -f "$mf" ]] && command_exists node && \
-        echo "  vendored @ $(node -e "process.stdout.write(require('$mf').vendors[0].pinnedCommit.slice(0,10)+' ('+require('$mf').vendors[0].vendoredOn+')')" 2>/dev/null || echo '?')"
+        node -e "require('$mf').vendors.forEach(v=>console.log('  vendored: '+v.source+' @ '+v.pinnedCommit.slice(0,10)+' ('+v.vendoredOn+')'))" 2>/dev/null
 }
 
 # Machine-readable command list (name<TAB>description), one per line. SINGLE SOURCE
