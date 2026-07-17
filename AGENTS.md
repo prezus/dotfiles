@@ -90,6 +90,7 @@ dotfiles check-packages / retry-failed / edit
 
 - **Skills in a separate repo**, symlinked — one source of truth, works across all 5 agents (Claude Code/Codex/Cursor/OpenCode/Pi). See `prezus/skills/VENDORING.md`.
 - **brew vs bun split** — brew for anything with a formula (auto-completions); bun only for JS-only tools (`bun-global.txt`). npm globals are eliminated.
+- **Node.js is managed by Vite+** (`VP_NODE_MANAGER=yes`), not Homebrew. `vp env` provides `node/npm/npx/corepack` shims in `~/.vite-plus/bin` (per-project versions). `brew "node"` was removed; brew may still pull node as a transitive dep of node-based CLIs, but Vite+'s shims shadow it in PATH. **Vite+ owns its shell integration** — it writes `conf.d/vite-plus.fish` + blocks in `.zshrc`/`.profile`/`.zshenv`; because those are stowed, its writes land in the repo and are committed (don't hand-edit or strip them).
 - **1Password SSH** — no keygen; `dotfiles ssh` binds `IdentityAgent`; git signs via `op-ssh-sign`.
 - **Two shells** — zsh is the current login shell; fish is being adopted (starship prompt shared, so both look identical). See `home/.config/fish/AGENTS.md`.
 - **Vite+ (`vp`/`vpr`)** installed via `dotfiles viteplus`; fish integration in `home/.config/fish/{conf.d/vite-plus.fish,completions/vp*.fish}`.

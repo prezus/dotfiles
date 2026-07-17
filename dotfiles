@@ -173,17 +173,15 @@ _stow_dotfiles() {
 _install_viteplus() {
     if [[ -x "$HOME/.vite-plus/bin/vp" ]]; then
         print_success "Vite+ already installed ($("$HOME/.vite-plus/bin/vp" --version 2>/dev/null | head -1))"
-    else
-        print_info "Installing Vite+ (curl https://vite.plus | bash)..."
-        VP_NODE_MANAGER=no curl -fsSL https://vite.plus | bash \
-            || { print_warning "Vite+ install failed"; return 1; }
-        print_success "Vite+ installed"
+        return 0
     fi
-    # The installer writes its OWN *eager* fish integration to conf.d/vite-plus.fish
-    # (runs `vp` at every shell startup). We ship a *lazy* version (stowed from the
-    # repo), so remove the installer's so `dotfiles stow` lays ours down.
-    rm -f "$HOME/.config/fish/conf.d/vite-plus.fish"
-    print_info "using our lazy Vite+ fish integration (applied by 'dotfiles stow')"
+    print_info "Installing Vite+ (curl https://vite.plus | bash)..."
+    # VP_NODE_MANAGER=yes → Vite+ manages Node versions (non-interactive). Vite+ OWNS its
+    # shell integration: it writes conf.d/vite-plus.fish (source env.fish → node shims)
+    # and appends to .zshrc/.profile. That fish file is gitignored as machine-generated.
+    VP_NODE_MANAGER=yes curl -fsSL https://vite.plus | bash \
+        || { print_warning "Vite+ install failed"; return 1; }
+    print_success "Vite+ installed"
 }
 
 # Install global JS CLIs that have no Homebrew formula (listed in
@@ -275,8 +273,9 @@ cmd_init() {
 
 cmd_update() {
     print_header "Updating"
-    print_info "Pulling latest dotfiles..."
-    git -C "$DOTFILES_DIR" pull --ff-only && print_success "Repo updated" || print_warning "git pull skipped/failed"
+    print_info "Pulling latest repos..."
+    git -C "$DOTFILES_DIR" pull --ff-only && print_success "dotfiles updated" || print_warning "dotfiles pull skipped/failed"
+    [[ -d "$SKILLS_REPO/.git" ]] && { git -C "$SKILLS_REPO" pull --ff-only && print_success "skills repo updated" || print_warning "skills pull skipped/failed"; }
 
     if confirm "Update Homebrew packages?" "y"; then
         # WARP/VPN latency can trip brew's curl speed-limit; pre-warm the API cache.
@@ -288,7 +287,7 @@ cmd_update() {
         brew update && brew upgrade && print_success "Packages updated"
     fi
 
-    confirm "Update rustup / cargo / go / bun / fisher tools?" "y" && _update_extras
+    confirm "Update language tools (rustup, cargo, go, bun, fisher, Vite+)?" "y" && _update_extras
     confirm "Re-stow dotfiles?" "y" && _stow_dotfiles
     confirm "Sync vendored skills?" "n" && cmd_skills update
 }
@@ -306,40 +305,66 @@ _update_extras() {
     fi
     command_exists bun && { print_info "bun update -g..."; bun update -g; }
     fish -c 'type -q fisher; and fisher update' >/dev/null 2>&1 && print_success "fisher plugins updated"
-    [[ -x "$HOME/.vite-plus/bin/vp" ]] && print_info "Vite+: run 'vp' self-update manually if desired"
+    [[ -x "$HOME/.vite-plus/bin/vp" ]] && { print_info "Vite+ upgrade (vp)..."; "$HOME/.vite-plus/bin/vp" upgrade; }
     print_success "extras updated"
 }
 
 cmd_doctor() {
     print_header "Diagnostics"
     local issues=0
-    command_exists brew  && print_success "Homebrew"      || { print_error "Homebrew missing"; ((++issues)); }
-    command_exists stow  && print_success "GNU Stow"      || { print_error "stow missing"; ((++issues)); }
-    command_exists fish  && print_success "fish"          || { print_error "fish missing"; ((++issues)); }
-    fish -c 'type -q fisher' 2>/dev/null && print_success "fisher" || print_warning "fisher not installed"
+    local ver="[0-9]+(\.[0-9]+)+"
 
-    # Skills symlinks
-    if [[ "$(readlink "$HOME/.agents/skills" 2>/dev/null)" == "$SKILLS_SRC" ]]; then
-        print_success "~/.agents/skills → skills repo ($(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d " ") skills)"
-    else print_warning "~/.agents/skills not linked (run: dotfiles skills install)"; fi
+    echo -e "\n${BOLD}Tooling${RESET}"
+    if command_exists brew; then print_success "Homebrew — $(brew --version 2>/dev/null | head -1) ($(command -v brew))"; else print_error "Homebrew — missing"; ((++issues)); fi
+    if command_exists stow; then print_success "GNU Stow — $(stow --version 2>/dev/null | grep -oE "$ver" | head -1)"; else print_error "GNU Stow — missing"; ((++issues)); fi
+    if command_exists git;  then print_success "git — $(git --version | grep -oE "$ver" | head -1)"; else print_error "git — missing"; ((++issues)); fi
+    command_exists node   && print_success "node — $(node --version) · npm $(npm --version 2>/dev/null)"                                   || print_warning "node — missing"
+    command_exists bun    && print_success "bun — v$(bun --version) · $(bun pm ls -g 2>/dev/null | grep -c '── ') global(s)"               || print_warning "bun — missing"
+    command_exists rustup && print_success "rustup — rustc $(rustc --version 2>/dev/null | grep -oE "$ver" | head -1) · $(rustup toolchain list 2>/dev/null | wc -l | tr -d ' ') toolchain(s)" || print_warning "rustup — not installed (dotfiles rust)"
+    command_exists go     && print_success "go — $(go version 2>/dev/null | grep -oE 'go[0-9.]+')"                                          || print_warning "go — missing"
+    [[ -x "$HOME/.vite-plus/bin/vp" ]] && print_success "Vite+ — $("$HOME/.vite-plus/bin/vp" --version 2>/dev/null | head -1)"             || print_warning "Vite+ — not installed (dotfiles viteplus)"
+
+    echo -e "\n${BOLD}Shell${RESET}"
+    if command_exists fish; then print_success "fish — $(fish --version 2>/dev/null | grep -oE "$ver") ($(command -v fish))"; else print_error "fish — missing"; ((++issues)); fi
+    fish -c 'type -q fisher' 2>/dev/null \
+        && print_success "fisher — $(grep -cvE '^\s*#|^\s*$' "$HOME_DIR/.config/fish/fish_plugins" 2>/dev/null) plugin(s)" \
+        || print_warning "fisher — not installed"
+    if [[ "$SHELL" == *fish ]]; then
+        print_success "login shell: fish ($SHELL)"
+    else
+        print_warning "login shell: $SHELL — not fish yet (run: dotfiles fish)"
+    fi
+
+    echo -e "\n${BOLD}Skills${RESET}"
+    local scount; scount="$(find "$SKILLS_SRC" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+    [[ "$(readlink "$HOME/.agents/skills" 2>/dev/null)" == "$SKILLS_SRC" ]] \
+        && print_success "~/.agents/skills → $SKILLS_SRC ($scount skills)" \
+        || print_warning "~/.agents/skills — not linked (dotfiles skills install)"
     [[ "$(readlink "$HOME/.claude/skills" 2>/dev/null)" == "$HOME/.agents/skills" ]] \
         && print_success "~/.claude/skills → ~/.agents/skills" \
-        || print_warning "~/.claude/skills not linked (run: dotfiles skills install)"
+        || print_warning "~/.claude/skills — not linked (dotfiles skills install)"
+    if [[ -f "$SKILLS_REPO/vendor-manifest.json" ]] && command_exists node; then
+        print_info "vendored: $(node -e "const v=require('$SKILLS_REPO/vendor-manifest.json').vendors[0];process.stdout.write(v.source+' @ '+v.pinnedCommit.slice(0,10)+' ('+v.vendoredOn+')')" 2>/dev/null)"
+    fi
 
-    # 1Password SSH + git signing
-    [[ -S "$OP_AGENT_SOCK" ]] && print_success "1Password SSH agent socket" || print_warning "1Password SSH agent socket not found"
-    [[ "$(git config --get gpg.format)" == "ssh" && -n "$(git config --get user.signingkey)" ]] \
-        && print_success "git SSH commit signing configured" || print_warning "git signing not configured"
+    echo -e "\n${BOLD}Security${RESET}"
+    [[ -S "$OP_AGENT_SOCK" ]] && print_success "1Password SSH agent — socket present" || print_warning "1Password SSH agent — socket missing (enable in 1Password ▸ Settings ▸ Developer)"
+    if [[ "$(git config --get gpg.format)" == "ssh" && -n "$(git config --get user.signingkey)" ]]; then
+        print_success "git signing — ssh · commit.gpgsign=$(git config --get commit.gpgsign 2>/dev/null || echo unset)"
+        print_info "signing key: $(git config --get user.signingkey | cut -c1-40)…"
+    else print_warning "git signing — not configured (needs gpg.format=ssh + user.signingkey)"; fi
 
-    # Broken symlinks under $HOME (shallow)
-    local broken=0 l
-    while IFS= read -r -d '' l; do [[ -e "$l" ]] || ((++broken)); done \
-        < <(find "$HOME" -maxdepth 3 -type l -print0 2>/dev/null)
-    [[ $broken -eq 0 ]] && print_success "No broken symlinks" || print_warning "$broken broken symlinks"
+    echo -e "\n${BOLD}Environment${RESET}"
+    echo "$PATH" | tr ':' '\n' | grep -qx "$DOTFILES_DIR" \
+        && print_success "dotfiles on PATH ($DOTFILES_DIR)" \
+        || print_warning "dotfiles not on PATH — add $DOTFILES_DIR (open a new shell after stow)"
+    print_info "stow tree: $(find "$HOME_DIR" -type f 2>/dev/null | wc -l | tr -d ' ') tracked files under home/"
+    local broken=() l
+    while IFS= read -r -d '' l; do [[ -e "$l" ]] || broken+=("$l"); done < <(find "$HOME" -maxdepth 3 -type l -print0 2>/dev/null)
+    if [[ ${#broken[@]} -eq 0 ]]; then print_success "no broken symlinks (~ depth 3)"
+    else print_warning "${#broken[@]} broken symlink(s):"; printf '    %s\n' "${broken[@]}"; fi
 
-    echo "$PATH" | grep -q "$DOTFILES_DIR" && print_success "dotfiles is on PATH" \
-        || print_warning "add $DOTFILES_DIR to PATH so 'dotfiles' works globally"
-
+    echo
     [[ $issues -eq 0 ]] && print_header "All critical checks passed ✨" || print_header "$issues critical issue(s)"
 }
 
@@ -417,13 +442,14 @@ _skills_status() {
 _print_commands() {
     printf '%s\n' \
         $'init\tFull setup: brew/rust/packages/bun/vite+/stow/ssh/fish/skills' \
-        $'update\tUpdate brew + rust/cargo/go/bun/fisher, re-stow, sync skills' \
+        $'update\tUpdate everything: repos, brew, rust/cargo/go/bun/fisher/vite+, skills' \
         $'doctor\tHealth check (brew, stow, fish, skills links, 1Password, signing)' \
         $'stow\tRe-symlink home/ into $HOME (--adopt on an existing machine)' \
         $'ssh\tMaintain ~/.ssh/config (1Password agent + legacy compat)' \
         $'bun\tInstall JS globals from packages/bun-global.txt' \
         $'viteplus\tInstall Vite+ (vp/vpr)' \
         $'rust\tInstall rustup toolchains/targets from packages/rust.txt' \
+        $'fish\tMake fish the default login shell + install fisher plugins' \
         $'skills\tinstall | update | status (from prezus/skills)' \
         $'check-packages\tShow which Brewfile packages are missing' \
         $'retry-failed\tReinstall packages that failed during init' \
@@ -436,13 +462,14 @@ cmd_help() {
 ${BOLD}dotfiles${RESET} — dotfiles management
 
   ${BOLD}init${RESET}            Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills
-  ${BOLD}update${RESET}          git pull → brew + rust/cargo/go/bun/fisher → re-stow → (skills sync)
+  ${BOLD}update${RESET}          pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → skills sync
   ${BOLD}stow${RESET} [--adopt]  Re-symlink home/ → \$HOME  (--adopt on an existing machine)
   ${BOLD}doctor${RESET}          Health check (brew, stow, fish, skills links, 1Password, signing)
   ${BOLD}ssh${RESET}             Maintain ~/.ssh/config (1Password agent + legacy compat)
   ${BOLD}bun${RESET}             Install global JS CLIs from packages/bun-global.txt
   ${BOLD}viteplus${RESET}        Install Vite+ (vp/vpr) to ~/.vite-plus
   ${BOLD}rust${RESET}            Install rustup + toolchains/targets from packages/rust.txt (+ ESP)
+  ${BOLD}fish${RESET}            Make fish the default login shell (+ fisher plugins)
   ${BOLD}skills${RESET} <sub>    install | update | status  (skills come from $SKILLS_REPO)
   ${BOLD}check-packages${RESET}  Show which Brewfile packages are missing
   ${BOLD}retry-failed${RESET}    Reinstall packages that failed during init
@@ -464,6 +491,7 @@ main() {
         bun)            _install_bun_globals "$@" ;;
         viteplus)       _install_viteplus "$@" ;;
         rust)           _install_rust && _install_rust_esp ;;
+        fish)           _setup_fish "$@" ;;
         skills)         cmd_skills "$@" ;;
         check-packages) cmd_check_packages "$@" ;;
         retry-failed)   cmd_retry_failed "$@" ;;
