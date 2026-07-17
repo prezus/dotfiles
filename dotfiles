@@ -163,7 +163,8 @@ _stow_dotfiles() {
         print_warning "--adopt: existing files are moved INTO the repo (safe only if they match; review 'git diff' after)"
     fi
     print_info "Stowing home/ → ${HOME}..."
-    if stow -R "${extra[@]}" -v -d "${DOTFILES_DIR}" -t "${HOME}" home; then
+    # "${extra[@]+...}" guard: bash 3.2 (macOS) errors on empty-array expansion under `set -u`.
+    if stow -R "${extra[@]+"${extra[@]}"}" -v -d "${DOTFILES_DIR}" -t "${HOME}" home; then
         print_success "Dotfiles stowed"
     else
         print_error "stow conflicts: real files already exist at those paths."
