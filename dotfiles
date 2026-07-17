@@ -25,6 +25,10 @@ readonly HOME_DIR="${DOTFILES_DIR}/home"
 SKILLS_REPO="${SKILLS_REPO:-$HOME/Projects/skills}"
 SKILLS_SRC="${SKILLS_SRC:-$SKILLS_REPO/skills}"
 readonly OP_AGENT_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
+# Tools we generate fish completions for (fish has none built in for these).
+# Machine-generated → gitignored; `dotfiles fish` regenerates, `dotfiles doctor`
+# verifies. Each tool must support `<tool> completion fish`.
+readonly FISH_TOOL_COMPLETIONS=(docker kubectl orb orbctl)
 
 # ─── Colors ─────────────────────────────────────────────────────────
 # ANSI-C quoting so the escapes are real bytes (render in both echo -e and heredocs)
@@ -216,6 +220,14 @@ _setup_fish() {
     print_info "Installing fish plugins via fisher..."
     fish -c 'type -q fisher; or curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher; fisher update' \
         >/dev/null 2>&1 && print_success "fish plugins installed" || print_warning "fisher/plugin install had issues"
+    # Generate tool completions fish has none for (machine-generated → gitignored,
+    # symlinked in via stow). Written to the stow source; verified by `dotfiles doctor`.
+    local comp_dir="$HOME_DIR/.config/fish/completions" made=0 tool
+    for tool in "${FISH_TOOL_COMPLETIONS[@]}"; do
+        command_exists "$tool" || continue
+        "$tool" completion fish >"$comp_dir/$tool.fish" 2>/dev/null && ((++made)) || true
+    done
+    print_success "fish tool completions generated ($made/${#FISH_TOOL_COMPLETIONS[@]})"
 }
 
 # Maintain our SSH settings in ~/.ssh/config via an idempotent managed block:
@@ -333,6 +345,16 @@ cmd_doctor() {
         print_success "login shell: fish ($SHELL)"
     else
         print_warning "login shell: $SHELL — not fish yet (run: dotfiles fish)"
+    fi
+    local fish_comp="$HOME/.config/fish/completions" missing=() present=() t
+    for t in "${FISH_TOOL_COMPLETIONS[@]}"; do
+        command_exists "$t" || continue                 # only expect completions for installed tools
+        [[ -s "$fish_comp/$t.fish" ]] && present+=("$t") || missing+=("$t")
+    done
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        print_success "fish completions — ${present[*]:-none expected} present"
+    else
+        print_warning "fish completions — missing/empty: ${missing[*]} (run: dotfiles fish)"
     fi
 
     echo -e "\n${BOLD}Skills${RESET}"

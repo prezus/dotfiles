@@ -69,13 +69,16 @@ Thumbs.db
 # ─── Fisher-managed fish plugin files ───────────────────────────────
 #     Derived from home/.config/fish/fish_plugins; restored with `fisher update`.
 #     We track our OWN config.fish + conf.d/*.fish + fish_plugins, not these.
-home/.config/fish/functions/
+home/.config/fish/functions/*
 home/.config/fish/completions/*
 home/.config/fish/conf.d/git.fish
-# ...but keep the tool completions we author ourselves
+# ...but keep the fish files we author ourselves. Generated tool completions
+# (docker/kubectl/orb/orbctl) stay ignored — `dotfiles fish` regenerates them,
+# `dotfiles doctor` verifies them.
 !home/.config/fish/completions/vp.fish
 !home/.config/fish/completions/vpr.fish
 !home/.config/fish/completions/dotfiles.fish
+!home/.config/fish/functions/theme_gruvbox.fish
 
 # ─── Stow / install runtime ─────────────────────────────────────────
 # Backups the install script makes before replacing a real dir/symlink.
