@@ -10,12 +10,12 @@ repo `.gitignore`):
 
 | Path | Tracked? | Why |
 |------|----------|-----|
-| `agent/settings.json` | ✅ | provider/model/theme config |
-| `agent/themes/*.json` | ✅ | custom themes (e.g. `catppuccin-macchiato`) |
-| `agent/skills` | ❌ **symlink** | → `~/.agents/skills` (the [skills repo](https://github.com/prezus/skills) canonical pool) |
-| `agent/auth.json` | ❌ **local** | OAuth/API secrets — never commit |
-| `agent/sessions/` | ❌ **local** | per-machine runtime state |
-| `agent/node_modules/` | ❌ | dependencies |
+| `agent/settings.json` | yes | provider/model/theme config |
+| `agent/themes/*.json` | yes | custom themes (e.g. `catppuccin-macchiato`) |
+| `agent/skills` | no — **symlink** | → `~/.agents/skills` (the [skills repo](https://github.com/prezus/skills) canonical pool) |
+| `agent/auth.json` | no — **local** | OAuth/API secrets — never commit |
+| `agent/sessions/` | no — **local** | per-machine runtime state |
+| `agent/node_modules/` | no | dependencies |
 
 `auth.json` and `sessions/` stay as real files in `~/.pi/agent`; only `settings.json`
 and `themes/` are symlinked from here, so `~/.pi/agent` remains a real directory.

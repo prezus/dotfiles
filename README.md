@@ -11,14 +11,17 @@ only **deploys** them.
 ## Structure
 
 ```
-dotfiles                 # CLI: init / update / doctor / skills / stow   (bash)
-home/               # stowed into $HOME via `stow -t "$HOME" home`
-  .config/<tool>/   # per-tool config (fish, git, nvim, …)
-  .local/bin/       # personal scripts, on PATH
+dotfiles              # CLI: init / update / doctor / skills / stow   (bash)
+home/                 # stowed into $HOME via `stow -t "$HOME" home`
+  .config/<tool>/     # per-tool config (fish, git, nvim, …)
+  .local/bin/         # personal scripts, on PATH
 packages/
-  bundle            # Brewfile snapshot — `brew bundle --file=packages/bundle`
-INSTALL.md          # setup steps + the spec `dotfiles` implements
-AGENTS.md           # repo conventions for agents/humans
+  bundle              # Brewfile snapshot — `brew bundle --file=packages/bundle`
+  bundle.ignore       # installed on purpose, never tracked (drift-check excludes)
+  bun-global.txt      # JS-only global CLIs with no brew formula
+  rust.txt            # rustup toolchains / components / targets
+INSTALL.md            # setup steps + the spec `dotfiles` implements
+AGENTS.md             # repo conventions for agents/humans
 ```
 
 ## Bootstrap (fresh machine)
@@ -51,15 +54,22 @@ just run `dotfiles update` / `dotfiles doctor` from anywhere.
 
 ## Packages
 
-`packages/bundle` is a full `brew bundle dump` of this machine (taps, formulae, casks).
-Refresh it with:
+`packages/bundle` is a `brew bundle dump` of this machine (taps, formulae, casks) plus a
+hand-added tail, so a re-dump overwrites hand edits — review the diff before committing.
 
 ```sh
 brew bundle dump --file=packages/bundle --force
+sed -i '' '/^vscode "/d' packages/bundle    # extensions come from Settings Sync — never commit them
 ```
 
-Prune machine-specific entries before committing shared changes. An optional
-`packages/bundle.work` can hold work-only extras.
+Drift is checked in both directions, because neither command sees the other's:
+
+- `dotfiles check-packages` — in the bundle but not installed
+- `dotfiles doctor` → Packages — installed but not in the bundle
+
+The second is the one that bites: an ad-hoc `brew install` works fine here and is simply
+missing on the next machine. Things that should never be tracked (VS Code extensions,
+Homebrew's `node`) go in `packages/bundle.ignore` with a comment explaining why.
 
 ## Skills install model: one directory, all agents
 
@@ -72,12 +82,12 @@ fifth follows symlinks — so the whole fan-out is **two symlinks over one canon
 ```
 
 | Agent       | `~/.agents/skills` | `~/.claude/skills` |
-|-------------|:---:|:---:|
-| Pi          | ✅ native | — |
-| Codex       | ✅ native | — |
-| Cursor 2.4+ | ✅ native | ✅ |
-| OpenCode    | ✅ native | ✅ |
-| Claude Code | ❌ | ✅ native |
+|-------------|--------------------|--------------------|
+| Pi          | native             | —                  |
+| Codex       | native             | —                  |
+| Cursor 2.4+ | native             | yes                |
+| OpenCode    | native             | yes                |
+| Claude Code | not read           | native             |
 
 These symlinks are created by `dotfiles skills`, **not** stowed (they cross into `prezus/skills`
 and chain through each other, which stow doesn't model cleanly). Unlike dmmulroy's dotfiles
