@@ -122,6 +122,38 @@ export async function findBrokenSymlinks(root: string, maxDepth: number): Promis
   return broken.sort()
 }
 
+/**
+ * The $HOME directories this repo actually places files into — i.e. the mirror
+ * of the stow tree, derived rather than hardcoded.
+ *
+ * This is the definition of "ours". `home/` contains `.pi/` because we stow
+ * Pi's settings.json and themes/, so `~/.pi/agent/themes` is scanned. There is
+ * no `home/.claude/`, because Claude Code gets nothing from us except one
+ * skills symlink — so none of its 20-odd runtime directories are ever visited.
+ */
+export async function mirroredDirectories(sourceDir: string, targetDir: string): Promise<string[]> {
+  const dirs: string[] = []
+
+  const walk = async (rel: string): Promise<void> => {
+    const from = rel === "" ? sourceDir : join(sourceDir, rel)
+    let entries
+    try {
+      entries = await readdir(from, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const childRel = rel === "" ? entry.name : join(rel, entry.name)
+      dirs.push(join(targetDir, childRel))
+      await walk(childRel)
+    }
+  }
+
+  await walk("")
+  return dirs
+}
+
 export type LinkOutcome =
   | { action: "already-linked"; link: string; target: string }
   | { action: "created"; link: string; target: string }

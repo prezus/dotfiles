@@ -34,23 +34,22 @@ export const OP_AGENT_SOCK = join(
 /** Tools fish ships no completions for. Each must support `<tool> completion fish`. */
 export const FISH_TOOL_COMPLETIONS = ["docker", "kubectl", "orb", "orbctl"] as const
 
+// The skills symlink chain. Not stow's — these cross into a separate repo and
+// chain through each other, which stow doesn't model (INSTALL.md → GNU Stow).
+export const AGENTS_SKILLS_LINK = join(HOME, ".agents", "skills")
+export const CLAUDE_SKILLS_LINK = join(HOME, ".claude", "skills")
+export const PI_SKILLS_LINK = join(HOME, ".pi", "agent", "skills")
+
 /**
- * Where this repo is allowed to look for broken symlinks — and, by extension,
- * the only places it may offer to remove one.
+ * The paths this repo places into $HOME, beyond the stow tree. Everything else
+ * under those application directories belongs to the app, not to us.
  *
- * The bash scanned all of `$HOME` to depth 3, which reaches into ~/Projects and
- * every source repo under it. That surfaced (and would have offered to DELETE)
- * a git-tracked symlink in an unrelated project. A dotfiles CLI has no business
- * mutating anything it does not manage, so the scan is scoped to what stow
- * actually links into.
+ * `~/.claude` is the clearest case: it has ~21 entries — auth, sessions, debug
+ * logs, project state — and exactly ONE is ours. Claude Code is the only agent
+ * that won't read the vendor-neutral `~/.agents/skills`, so we place a single
+ * shim symlink and touch nothing else (INSTALL.md → Target state).
  */
-export const MANAGED_ROOTS = [
-  join(HOME, ".config"),
-  join(HOME, ".local"),
-  join(HOME, ".agents"),
-  join(HOME, ".claude"),
-  join(HOME, ".pi"),
-] as const
+export const OWNED_LINKS = [AGENTS_SKILLS_LINK, CLAUDE_SKILLS_LINK, PI_SKILLS_LINK] as const
 
 export const SCRIPT_NAME = "dotfiles"
 // Single source of truth — package.json, so `--version` can't drift from it.

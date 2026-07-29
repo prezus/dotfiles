@@ -18,7 +18,6 @@ import {
   FISH_TOOL_COMPLETIONS,
   HOME,
   HOME_DIR,
-  MANAGED_ROOTS,
   OP_AGENT_SOCK,
   PACKAGES_DIR,
   SKILLS_REPO,
@@ -28,12 +27,12 @@ import { commandExists, extract, probe, which } from "../../lib/exec.ts"
 import {
   countFilesRecursive,
   countSubdirectories,
-  findBrokenSymlinks,
   isDirectory,
   isSocket,
   pathExists,
   readlinkSafe,
 } from "../../lib/fs.ts"
+import { findBrokenOwnedLinks } from "../../lib/owned.ts"
 
 export type Status = "ok" | "warn" | "fail" | "info"
 
@@ -601,8 +600,8 @@ const brokenSymlinksCheck: Check = {
   section: "Environment",
   label: "broken symlinks",
   run: async () => {
-    const broken = (await Promise.all(MANAGED_ROOTS.map((root) => findBrokenSymlinks(root, 4)))).flat().sort()
-    if (broken.length === 0) return { status: "ok", message: "no broken symlinks (managed paths)" }
+    const broken = await findBrokenOwnedLinks()
+    if (broken.length === 0) return { status: "ok", message: "no broken symlinks (paths we place)" }
     return {
       status: "warn",
       message: `${broken.length} broken symlink(s):`,

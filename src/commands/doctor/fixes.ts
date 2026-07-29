@@ -9,9 +9,9 @@
 // side effects and can be unit-tested without any risk of mutation.
 import { unlink } from "node:fs/promises"
 import { join } from "node:path"
-import { FISH_TOOL_COMPLETIONS, HOME_DIR, MANAGED_ROOTS, PACKAGES_DIR } from "../../lib/env.ts"
+import { FISH_TOOL_COMPLETIONS, HOME_DIR, PACKAGES_DIR } from "../../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../../lib/exec.ts"
-import { findBrokenSymlinks } from "../../lib/fs.ts"
+import { findBrokenOwnedLinks } from "../../lib/owned.ts"
 import { withSuspendedUI } from "../../tui/renderer.ts"
 import { skills } from "../skills.ts"
 
@@ -77,9 +77,9 @@ export const FIXES: Record<string, Fix> = {
   "broken-symlinks": {
     label: "remove broken links",
     run: async () => {
-      // Scoped to MANAGED_ROOTS: this action DELETES, so it must never be able
-      // to reach a file the repo does not manage.
-      const broken = (await Promise.all(MANAGED_ROOTS.map((root) => findBrokenSymlinks(root, 4)))).flat()
+      // This action DELETES, so it must never reach a path the repo does not
+      // place. Same derivation the check uses.
+      const broken = await findBrokenOwnedLinks()
       let removed = 0
       for (const path of broken) {
         try {

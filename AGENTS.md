@@ -54,6 +54,7 @@ dotfiles/
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Tiling WM | `home/.config/aerospace/aerospace.toml` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
+| Pi agent config | `home/.pi/agent/` — settings.json + themes only; auth.json and sessions/ stay local |
 | Wire a new machine | `dotfiles init` |
 
 ## CONVENTIONS
@@ -149,7 +150,7 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun run test` (114 of them) and `bun run typecheck`. Run them yourself —
+- **Tests:** `bun run test` (121 of them) and `bun run typecheck`. Run them yourself —
   there is deliberately no CI; this is a single-user repo. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.
