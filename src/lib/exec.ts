@@ -34,18 +34,52 @@ export class Env {
     this.vars[key] = [value, ...parts].join(":")
   }
 
-  /** Absorb `KEY=value` lines, as emitted by `brew shellenv` / `~/.cargo/env`. */
+  /**
+   * Absorb `export KEY=value` lines, as emitted by `brew shellenv` and
+   * `~/.cargo/env`. This replaces bash's `eval`, which got the whole job for
+   * free by virtue of being a shell.
+   *
+   * Real `brew shellenv` output looks like:
+   *   export HOMEBREW_PREFIX="/opt/homebrew";
+   *   export PATH="/opt/homebrew/bin:/opt/homebrew/sbin${PATH+:$PATH}";
+   * Note the trailing semicolons and the `${VAR+alt}` self-reference — both
+   * must be handled or the resulting PATH is corrupt.
+   */
   absorbShellenv(output: string): void {
     for (const line of output.split("\n")) {
       const m = /^\s*export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line)
       if (!m) continue
       const [, key, rawValue] = m
       if (!key || rawValue === undefined) continue
-      let value = rawValue.trim().replace(/^["']|["']$/g, "")
-      // brew shellenv emits self-referential PATH assignments.
-      value = value.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (_, name: string) => this.vars[name] ?? "")
-      this.vars[key] = value
+
+      let value = rawValue.trim()
+      value = value.replace(/;+$/, "") // shellenv terminates every line with `;`
+      value = value.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1")
+      this.vars[key] = this.expand(value)
     }
+  }
+
+  /** Minimal shell parameter expansion — the forms shellenv actually emits. */
+  private expand(input: string): string {
+    // ${VAR+alt} / ${VAR:+alt} — use alt when VAR is set
+    let out = input.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*):?\+([^}]*)\}/g,
+      (_, name: string, alt: string) => (this.vars[name] ? this.expandSimple(alt) : ""),
+    )
+    // ${VAR:-default} / ${VAR-default}
+    out = out.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*):?-([^}]*)\}/g,
+      (_, name: string, fallback: string) => this.vars[name] ?? this.expandSimple(fallback),
+    )
+    return this.expandSimple(out)
+  }
+
+  private expandSimple(input: string): string {
+    return input.replace(
+      /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+      (_, braced: string | undefined, bare: string | undefined) =>
+        this.vars[braced ?? bare ?? ""] ?? "",
+    )
   }
 
   toObject(): Record<string, string> {

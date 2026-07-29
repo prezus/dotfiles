@@ -8,6 +8,7 @@
 // completion (home/.config/fish/completions/dotfiles.fish) calls the hidden
 // `__commands` subcommand on every tab-complete, so adding an entry here is all
 // that is required — there is no second list to keep in sync.
+import { doctor } from "./commands/doctor/index.ts"
 import { runLegacy } from "./legacy.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
 import { BOLD, RESET, printError } from "./lib/ui.ts"
@@ -37,7 +38,7 @@ const COMMANDS: Command[] = [
   {
     name: "doctor",
     description: "Health check (brew, stow, fish, skills links, 1Password, signing)",
-    run: (args) => runLegacy("doctor", args),
+    run: (args) => doctor(args),
   },
   {
     name: "stow",

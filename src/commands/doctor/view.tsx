@@ -1,0 +1,227 @@
+// Full-screen doctor panel.
+//
+// The only OpenTUI-aware file in this command. checks.ts holds the data and
+// knows nothing about rendering, which is what lets a breaking OpenTUI bump
+// touch src/tui/ and this file rather than the whole feature.
+import { createCliRenderer } from "@opentui/core"
+import { createRoot, useKeyboard } from "@opentui/react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { BOLD, STATUS_COLOR, STATUS_GLYPH, theme } from "../../tui/theme.ts"
+import { setRenderer } from "../../tui/renderer.ts"
+import {
+  CHECKS,
+  SECTIONS,
+  countCriticalIssues,
+  isApplicable,
+  type CompletedCheck,
+  type Section,
+} from "./checks.ts"
+import { fixFor } from "./fixes.ts"
+
+type Row = CompletedCheck | { pending: true; id: string; section: Section; label: string }
+
+const isPending = (r: Row): r is Extract<Row, { pending: true }> => "pending" in r
+
+export async function runDoctorTui(): Promise<number> {
+  const renderer = await createCliRenderer()
+  setRenderer(renderer)
+
+  return await new Promise<number>((resolve) => {
+    createRoot(renderer).render(
+      <DoctorView
+        onExit={(code) => {
+          renderer.destroy()
+          resolve(code)
+        }}
+      />,
+    )
+  })
+}
+
+function DoctorView({ onExit }: { onExit: (code: number) => void }) {
+  // Seed with every check as pending, then replace each as it resolves — the
+  // panel fills in progressively instead of blocking on the slowest probe.
+  const [rows, setRows] = useState<Row[]>(() =>
+    CHECKS.map((c) => ({ pending: true, id: c.id, section: c.section, label: c.label })),
+  )
+  const [cursor, setCursor] = useState(0)
+  const [collapsed, setCollapsed] = useState<Set<Section>>(new Set())
+  const [status, setStatus] = useState("running checks…")
+  const [busy, setBusy] = useState(false)
+
+  const runAll = useCallback(() => {
+    const started = performance.now()
+    let done = 0
+    for (const check of CHECKS) {
+      void (async () => {
+        let completed: CompletedCheck
+        try {
+          completed = { ...check, result: await check.run() }
+        } catch (err) {
+          completed = {
+            ...check,
+            result: { status: "fail", message: `${check.label} — check failed: ${String(err)}` },
+          }
+        }
+        setRows((prev) => prev.map((r) => (r.id === completed.id ? completed : r)))
+        if (++done === CHECKS.length) {
+          setStatus(`${CHECKS.length} checks in ${Math.round(performance.now() - started)}ms`)
+        }
+      })()
+    }
+  }, [])
+
+  useEffect(runAll, [runAll])
+
+  // Applicable, non-pending-aware view of the rows, in section order.
+  const visible = useMemo(() => {
+    const applicable = rows.filter((r) => isPending(r) || isApplicable(r))
+    return SECTIONS.flatMap((section) =>
+      collapsed.has(section) ? [] : applicable.filter((r) => r.section === section),
+    )
+  }, [rows, collapsed])
+
+  const selected = visible[Math.min(cursor, visible.length - 1)]
+
+  const applyFix = useCallback(
+    async (row: Row | undefined) => {
+      if (!row || busy) return
+      const fix = fixFor(row.id)
+      if (!fix) {
+        setStatus(`${row.label}: nothing to fix`)
+        return
+      }
+      setBusy(true)
+      setStatus(`${fix.label}…`)
+      try {
+        const outcome = await fix.run()
+        setStatus(outcome)
+        // Re-run just this check so the panel reflects reality, not hope.
+        const check = CHECKS.find((c) => c.id === row.id)
+        if (check) {
+          const completed = { ...check, result: await check.run() }
+          setRows((prev) => prev.map((r) => (r.id === completed.id ? completed : r)))
+        }
+      } catch (err) {
+        setStatus(`fix failed: ${String(err)}`)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [busy],
+  )
+
+  useKeyboard((key) => {
+    if (busy) return
+    if (key.name === "q" || (key.ctrl && key.name === "c")) {
+      const done = rows.filter((r): r is CompletedCheck => !isPending(r))
+      onExit(countCriticalIssues(done) === 0 ? 0 : 1)
+      return
+    }
+    if (key.name === "down" || key.name === "j") setCursor((i) => Math.min(i + 1, visible.length - 1))
+    if (key.name === "up" || key.name === "k") setCursor((i) => Math.max(i - 1, 0))
+    if (key.name === "return") void applyFix(selected)
+    if (key.name === "r") {
+      setRows(CHECKS.map((c) => ({ pending: true, id: c.id, section: c.section, label: c.label })))
+      setStatus("re-running checks…")
+      runAll()
+    }
+    if (key.name === "space" && selected) {
+      const section = selected.section
+      setCollapsed((prev) => {
+        const next = new Set(prev)
+        if (next.has(section)) next.delete(section)
+        else next.add(section)
+        return next
+      })
+    }
+  })
+
+  const completed = rows.filter((r): r is CompletedCheck => !isPending(r))
+  const warnings = completed.filter((c) => c.result.status === "warn").length
+  const failures = completed.filter((c) => c.result.status === "fail").length
+  const pendingCount = rows.length - completed.length
+
+  const headline =
+    pendingCount > 0
+      ? `${pendingCount} running`
+      : failures > 0
+        ? `${failures} failed · ${warnings} warnings`
+        : warnings > 0
+          ? `${warnings} warnings`
+          : "all clear"
+
+  return (
+    <box flexDirection="column" padding={1}>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={theme.blue} attributes={BOLD}>
+          dotfiles doctor
+        </text>
+        <text fg={failures > 0 ? theme.red : warnings > 0 ? theme.yellow : theme.green}>
+          {headline}
+        </text>
+      </box>
+
+      {SECTIONS.map((section) => {
+        const sectionRows = rows.filter((r) => r.section === section && (isPending(r) || isApplicable(r)))
+        if (sectionRows.length === 0) return null
+        const folded = collapsed.has(section)
+        const sectionIssues = sectionRows.filter(
+          (r) => !isPending(r) && (r.result.status === "warn" || r.result.status === "fail"),
+        ).length
+
+        return (
+          <box key={section} flexDirection="column" marginTop={1}>
+            <box flexDirection="row">
+              <text fg={theme.fg} attributes={BOLD}>
+                {folded ? "▸" : "▾"} {section}
+              </text>
+              {folded && sectionIssues > 0 && (
+                <text fg={theme.yellow}>{`  ${sectionIssues} to review`}</text>
+              )}
+            </box>
+
+            {!folded &&
+              sectionRows.map((row) => {
+                const active = selected?.id === row.id
+                const marker = active ? " ❯ " : "   "
+
+                if (isPending(row)) {
+                  return (
+                    <box key={row.id} flexDirection="row">
+                      <text fg={theme.orange}>{marker}</text>
+                      <text fg={theme.dim}>○ {row.label}</text>
+                    </box>
+                  )
+                }
+
+                const { status: s, message, extra } = row.result
+                const fixable = fixFor(row.id) !== undefined
+                return (
+                  <box key={row.id} flexDirection="column">
+                    <box flexDirection="row">
+                      <text fg={active ? theme.orange : theme.bgSoft}>{marker}</text>
+                      <text fg={STATUS_COLOR[s]}>{STATUS_GLYPH[s]} </text>
+                      <text fg={active ? theme.fg : theme.fgMuted}>{message}</text>
+                      {fixable && s !== "ok" && <text fg={theme.yellow}>{"  [fix ⏎]"}</text>}
+                    </box>
+                    {(extra ?? []).map((line, i) => (
+                      <text key={i} fg={line.kind === "warn" ? theme.yellow : theme.dim}>
+                        {`     ${line.text.trim()}`}
+                      </text>
+                    ))}
+                  </box>
+                )
+              })}
+          </box>
+        )
+      })}
+
+      <box marginTop={1} flexDirection="column">
+        <text fg={theme.dim}>{"─".repeat(60)}</text>
+        <text fg={busy ? theme.orange : theme.gray}>{status}</text>
+        <text fg={theme.bgHard}>↑↓ nav · ⏎ fix · space fold · r re-run · q quit</text>
+      </box>
+    </box>
+  )
+}
