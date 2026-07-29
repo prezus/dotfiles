@@ -225,6 +225,32 @@ const viteplusCheck: Check = {
   },
 }
 
+/**
+ * The coding agents this repo actually configures.
+ *
+ * They were absent from doctor for no better reason than that the bash never
+ * checked them — yet Pi has more tracked config here than most of the tools
+ * above it (settings.json, themes/, a README), and the entire point of the
+ * skills symlink chain is to serve these. `auth.json` and `sessions/` are
+ * deliberately NOT ours and are never inspected.
+ */
+const AGENT_TOOLS = [
+  { bin: "pi", label: "Pi", formula: "pi-coding-agent" },
+  { bin: "opencode", label: "OpenCode", formula: "opencode" },
+] as const
+
+const agentChecks: Check[] = AGENT_TOOLS.map(({ bin, label, formula }) => ({
+  id: `agent-${bin}`,
+  section: "Tooling",
+  label,
+  run: async () => {
+    const path = await which(bin)
+    if (!path) return { status: "warn", message: `${label} — missing (brew install ${formula})` }
+    const version = firstLine((await probe([bin, "--version"])).stdout)
+    return { status: "ok", message: `${label} — ${version || "installed"} (${path})` }
+  },
+}))
+
 // ─── Shell ──────────────────────────────────────────────────────────
 
 const fishCheck: Check = {
@@ -621,6 +647,7 @@ export const CHECKS: Check[] = [
   rustupCheck,
   goCheck,
   viteplusCheck,
+  ...agentChecks,
   fishCheck,
   fisherCheck,
   loginShellCheck,
