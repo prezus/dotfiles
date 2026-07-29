@@ -7,7 +7,6 @@ import { join } from "node:path"
 import { env, extract, probe, runInteractiveCode } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
-import { withSuspendedUI } from "../tui/renderer.ts"
 
 const VITE_PLUS_DIR = () => join(env.get("HOME") ?? "", ".vite-plus")
 const VP = () => join(VITE_PLUS_DIR(), "bin", "vp")
@@ -49,12 +48,11 @@ export async function viteplus(): Promise<number> {
   } else {
     printInfo("Installing Vite+ (curl https://vite.plus | bash)...")
     // VP_NODE_MANAGER=yes → Vite+ manages Node versions, non-interactively.
-    const code = await withSuspendedUI(() =>
-      runInteractiveCode(["/bin/bash", "-c", "curl -fsSL https://vite.plus | bash"], {
-        extraEnv: { VP_NODE_MANAGER: "yes" },
-        needsStdin: true,
-      }),
-    )
+    const code = await runInteractiveCode(["/bin/bash", "-c", "curl -fsSL https://vite.plus | bash"], {
+      extraEnv: { VP_NODE_MANAGER: "yes" },
+      needsStdin: true,
+    })
+
     if (code !== 0) {
       printWarning("Vite+ install failed")
       return 1

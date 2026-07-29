@@ -165,9 +165,10 @@ sequences when piped.
   in, rather than inheriting the terminal. brew, stow, rustup toolchains and bun all render
   inside the app.
 - **Mark a child `needsStdin: true` when it needs the USER's keyboard** — sudo, chsh,
-  $EDITOR, the `curl | bash` installers. Those always inherit the real terminal and must
-  also be wrapped in `withSuspendedUI()`, or the prompt is invisible and the keystrokes are
-  swallowed by the renderer. Getting this wrong is a hang, not a cosmetic bug.
+  $EDITOR, the `curl | bash` installers. exec.ts then suspends any mounted UI around **that
+  child alone** and gives the terminal straight back. Commands never call `withSuspendedUI`
+  themselves: classifying at the command level was wrong, because `init` runs ten steps and
+  only one wants a password. Getting the flag wrong is a hang, not a cosmetic bug.
 - **`run()` vs `probe()`:** `probe()` for version checks and feature detection, where a
   missing binary is an expected answer (it yields exit 127). `run()` returns a `Result` and
   reserves `Err` for the process failing to start; a non-zero exit is ordinary data.

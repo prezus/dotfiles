@@ -10,7 +10,6 @@ import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
 import { parseRustList } from "../lib/lists.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
-import { withSuspendedUI } from "../tui/renderer.ts"
 
 const RUST_LIST = join(PACKAGES_DIR, "rust.txt")
 
@@ -30,13 +29,14 @@ export async function installRustup(): Promise<boolean> {
     printSuccess("rustup already installed")
   } else {
     printInfo("Installing rustup...")
-    const code = await withSuspendedUI(() =>
-      runInteractiveCode([
+    const code = await runInteractiveCode([
         "/bin/bash",
         "-c",
         "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
-      ], { needsStdin: true }),
+      ],
+      { needsStdin: true },
     )
+
     if (code !== 0) {
       printWarning("rustup install failed")
       return false
@@ -100,7 +100,7 @@ export async function installRustEsp(): Promise<void> {
   }
 
   printInfo("Installing ESP (Xtensa) toolchain via espup...")
-  const code = await withSuspendedUI(() => runInteractiveCode(["espup", "install"]))
+  const code = await runInteractiveCode(["espup", "install"])
   if (code === 0) printSuccess("ESP toolchain installed")
   else printWarning("espup install failed")
 }

@@ -12,6 +12,7 @@
 
 import { Result } from "better-result"
 import { SpawnError } from "./errors.ts"
+import { withTerminal } from "./terminal.ts"
 import { getLogSink } from "./ui.ts"
 
 /** A process environment that later steps can amend, mimicking a single shell. */
@@ -218,21 +219,40 @@ export async function runInteractive(
   const sink = getLogSink()
   const capture = sink !== null && opts.needsStdin !== true
 
+  // A child that needs the keyboard gets the real terminal for exactly as long
+  // as it runs — the UI suspends around THIS child, not around the whole
+  // command. Nothing above here has to know a UI exists.
+  if (!capture) {
+    return await withTerminal(async () => {
+      const started = Result.try(() =>
+        Bun.spawn([bin, ...args], {
+          cwd: opts.cwd,
+          env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
+          stdin: "inherit",
+          stdout: "inherit",
+          stderr: "inherit",
+        }),
+      )
+      if (Result.isError(started)) {
+        return Result.err(new SpawnError({ command: cmd.join(" "), message: String(started.error) }))
+      }
+      return Result.ok(await started.value.exited)
+    })
+  }
+
   const spawned = Result.try(() =>
     Bun.spawn([bin, ...args], {
       cwd: opts.cwd,
       env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
-      stdin: capture ? "ignore" : "inherit",
-      stdout: capture ? "pipe" : "inherit",
-      stderr: capture ? "pipe" : "inherit",
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
     }),
   )
   if (Result.isError(spawned)) {
     return Result.err(new SpawnError({ command: cmd.join(" "), message: String(spawned.error) }))
   }
   const proc = spawned.value
-
-  if (!capture) return Result.ok(await proc.exited)
 
   const emit = (line: string) => sink?.("info", line)
   const [, , code] = await Promise.all([

@@ -12,7 +12,6 @@ import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR, PACKAGES_DIR } from "../../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../../lib/exec.ts"
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
-import { withSuspendedUI } from "../../tui/renderer.ts"
 import { skills } from "../skills.ts"
 
 export type Fix = {
@@ -28,7 +27,7 @@ export const FIXES: Record<string, Fix> = {
       const fish = await which("fish")
       if (!fish) return "fish is not installed"
       // chsh prompts for a password — must own the terminal.
-      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fish], { needsStdin: true }))
+      const code = await runInteractiveCode(["chsh", "-s", fish], { needsStdin: true })
       return code === 0 ? `login shell → ${fish} (log out/in to apply)` : "chsh failed"
     },
   },
@@ -97,7 +96,7 @@ export const FIXES: Record<string, Fix> = {
 async function skillsInstall(): Promise<string> {
   // Native since Phase 3, but it may clone the skills repo, so it still needs
   // the terminal for git's progress output.
-  const code = await withSuspendedUI(() => skills(["install"]))
+  const code = await skills(["install"])
   return code === 0 ? "skills symlinks wired" : "skills install failed"
 }
 

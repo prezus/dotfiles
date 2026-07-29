@@ -8,11 +8,15 @@
 // EXPLICIT_SUSPENDED state and terminal restore handling, so the hand-off is a
 // wrapper rather than an unmount/remount dance.
 import type { CliRenderer } from "@opentui/core"
+import { setSuspendHandler } from "../lib/terminal.ts"
 
 let current: CliRenderer | null = null
 
 export function setRenderer(renderer: CliRenderer): void {
   current = renderer
+  // exec.ts suspends around any child that needs the keyboard; this is how it
+  // reaches the renderer without lib/ importing the TUI.
+  setSuspendHandler(withSuspendedUI)
 }
 
 export function getRenderer(): CliRenderer | null {

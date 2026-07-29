@@ -19,7 +19,6 @@
 import { join } from "node:path"
 import { commandExists, env, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
-import { withSuspendedUI } from "../tui/renderer.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 /** Apple Silicon first, then Intel — the only two prefixes Homebrew uses. */
@@ -68,16 +67,15 @@ export async function ensureHomebrew(): Promise<boolean> {
 
   printInfo("Installing Homebrew (non-interactive)...")
   // The installer needs the terminal: it prints progress and may ask for sudo.
-  const code = await withSuspendedUI(() =>
-    runInteractiveCode(
+  const code = await runInteractiveCode(
       [
         "/bin/bash",
         "-c",
         'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
       ],
       { extraEnv: { NONINTERACTIVE: "1" }, needsStdin: true },
-    ),
   )
+
   if (code !== 0) {
     printWarning("Homebrew install failed")
     return false

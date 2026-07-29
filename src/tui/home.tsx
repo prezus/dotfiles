@@ -17,7 +17,7 @@ import { VERSION } from "../lib/env.ts"
 import { setLogSink, type LogLevel } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import { initialHomeState, reduceHomeKey } from "./interaction.ts"
-import { setRenderer, withSuspendedUI } from "./renderer.ts"
+import { setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
 
@@ -86,23 +86,14 @@ function Home({
   useEffect(refresh, [refresh])
 
   /**
-   * The only commands that still take the screen — because they hand YOU the
-   * keyboard, not because they print a lot.
-   *
-   *   init      — installs Homebrew (sudo) and runs chsh
-   *   fish      — `sudo tee /etc/shells`, then chsh
-   *   rust      — rustup's `curl | sh` installer
-   *   viteplus  — Vite+'s `curl | bash` installer
-   *   edit      — $EDITOR owns the terminal by definition
-   *
-   * Everything else streams into the pane: brew, stow, bun add, rustup
-   * toolchains. Those only PRINT, so capturing them costs nothing, and marking
-   * the genuinely-interactive children with needsStdin is what makes that safe
-   * (see RunOptions in src/lib/exec.ts).
+   * EVERY command runs here, in the pane. There is deliberately no list of
+   * "commands that take the screen" any more — that was the wrong granularity.
+   * `init` runs ten steps and only the Homebrew installer wants a password, so
+   * classifying the whole command meant dropping out of the app for the other
+   * nine. exec.ts now suspends around the individual CHILD that needs stdin
+   * (see lib/terminal.ts), so the screen changes hands for a password prompt
+   * and comes straight back.
    */
-  const HANDS_OVER_TERMINAL = new Set(["init", "fish", "rust", "viteplus", "edit"])
-
-  /** Run a print*-only command and show its output in a pane, staying in the TUI. */
   const runInPane = useCallback(
     async (label: string, run: () => Promise<number>) => {
       setBusy(true)
@@ -123,41 +114,19 @@ function Home({
     [],
   )
 
-  /** Hand the terminal over for a command that needs it, then take it back. */
-  const runInTerminal = useCallback(
-    async (label: string, run: () => Promise<number>) => {
-      setBusy(true)
-      setStatus(`running ${label}…`)
-      try {
-        // No "press enter to continue" here: OpenTUI owns stdin for its key
-        // handling, so a read of our own never receives anything and the app
-        // hangs. The command's own output stays on screen until it returns.
-        const code = await withSuspendedUI(run)
-        setStatus(`${label} exited ${code}`)
-      } catch (error) {
-        setStatus(`${label} failed: ${String(error)}`)
-      } finally {
-        setBusy(false)
-        refresh()
-      }
-    },
-    [refresh],
-  )
-
   const runCommand = useCallback(
     async (name: string) => {
       if (busy) return
-      // These two own the screen; render them here instead of spawning a renderer.
+      // These two are themselves full-screen; render them on this renderer.
       if (name === "doctor" || name === "update") {
         setView(name)
         return
       }
       const command = commands.find((c) => c.name === name)
       if (!command) return
-      if (HANDS_OVER_TERMINAL.has(name)) await runInTerminal(name, () => command.run())
-      else await runInPane(name, () => command.run())
+      await runInPane(name, () => command.run())
     },
-    [busy, commands, runInTerminal, runInPane],
+    [busy, commands, runInPane],
   )
 
   useKeyboard((key) => {
@@ -252,7 +221,7 @@ function Home({
           }
           // The selection is already made, so pass it through explicitly —
           // update() must not open a picker of its own.
-          void runInTerminal("update", () => update([`--only=${[...picked].join(",")}`]))
+          void runInPane("update", () => update([`--only=${[...picked].join(",")}`]))
         }}
       />
     )

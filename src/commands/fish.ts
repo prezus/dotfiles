@@ -1,12 +1,12 @@
 // `dotfiles fish` — make fish the login shell, install plugins, generate completions.
 //
-// Three distinct jobs, two of which need the real terminal (sudo, chsh). Inside
-// the TUI they go through withSuspendedUI.
+// Three distinct jobs, two of which need the real terminal (sudo, chsh). Those
+// children are marked needsStdin, and exec.ts suspends any mounted UI around
+// them — the command itself does not need to know a UI exists.
 import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR } from "../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { confirm, printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
-import { withSuspendedUI } from "../tui/renderer.ts"
 
 /** Add fish to /etc/shells so chsh will accept it. Needs sudo. */
 async function registerShell(fishPath: string): Promise<void> {
@@ -15,8 +15,9 @@ async function registerShell(fishPath: string): Promise<void> {
   if (contents.split("\n").some((l) => l.trim() === fishPath)) return
 
   printInfo("Adding fish to /etc/shells (sudo)...")
-  await withSuspendedUI(() =>
-    runInteractiveCode(["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`], { needsStdin: true }),
+  await runInteractiveCode(
+    ["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`],
+    { needsStdin: true },
   )
 }
 
@@ -56,7 +57,7 @@ export async function fish(): Promise<number> {
       printInfo(`login shell is ${process.env.SHELL} — run interactively to switch to fish`)
     } else if (await confirm("Set fish as your default shell?", true)) {
       // chsh prompts for a password — it must own the terminal.
-      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fishPath], { needsStdin: true }))
+      const code = await runInteractiveCode(["chsh", "-s", fishPath], { needsStdin: true })
       if (code === 0) printSuccess("Default shell → fish (log out/in to apply)")
       else printWarning("chsh failed")
     }
