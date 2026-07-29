@@ -13,5 +13,5 @@ export async function edit(): Promise<number> {
     printError(`editor '${editor}' not found`)
     return 1
   }
-  return await runInteractiveCode([editor, DOTFILES_DIR])
+  return await runInteractiveCode([editor, DOTFILES_DIR], { needsStdin: true })
 }

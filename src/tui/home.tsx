@@ -86,22 +86,21 @@ function Home({
   useEffect(refresh, [refresh])
 
   /**
-   * Commands that spawn a child owning the terminal. These genuinely cannot be
-   * rendered in a pane: they either need your keyboard (sudo, chsh, $EDITOR) or
-   * stream live progress from a tool we do not control (brew, rustup, the
-   * `curl | bash` installers). The screen handing over is the signal that
-   * something outside the app wants the terminal.
+   * The only commands that still take the screen — because they hand YOU the
+   * keyboard, not because they print a lot.
+   *
+   *   init      — installs Homebrew (sudo) and runs chsh
+   *   fish      — `sudo tee /etc/shells`, then chsh
+   *   rust      — rustup's `curl | sh` installer
+   *   viteplus  — Vite+'s `curl | bash` installer
+   *   edit      — $EDITOR owns the terminal by definition
+   *
+   * Everything else streams into the pane: brew, stow, bun add, rustup
+   * toolchains. Those only PRINT, so capturing them costs nothing, and marking
+   * the genuinely-interactive children with needsStdin is what makes that safe
+   * (see RunOptions in src/lib/exec.ts).
    */
-  const HANDS_OVER_TERMINAL = new Set([
-    "init",
-    "stow",
-    "bun",
-    "rust",
-    "viteplus",
-    "fish",
-    "edit",
-    "retry-failed",
-  ])
+  const HANDS_OVER_TERMINAL = new Set(["init", "fish", "rust", "viteplus", "edit"])
 
   /** Run a print*-only command and show its output in a pane, staying in the TUI. */
   const runInPane = useCallback(

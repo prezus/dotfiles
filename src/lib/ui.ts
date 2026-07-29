@@ -42,6 +42,9 @@ export const setLogSink = (next: LogSink | null): void => {
   sink = next
 }
 
+/** Whether output is being captured for a UI rather than written to stdout. */
+export const getLogSink = (): LogSink | null => sink
+
 const emit = (level: LogLevel, message: string, formatted: string): void => {
   if (sink) {
     sink(level, message)

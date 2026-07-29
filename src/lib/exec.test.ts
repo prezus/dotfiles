@@ -8,6 +8,7 @@
 import { describe, expect, it } from "bun:test"
 import { Result } from "better-result"
 import { Env, extract, probe, run, runInteractiveCode } from "./exec.ts"
+import { setLogSink } from "./ui.ts"
 
 describe("Env.prepend", () => {
   it("puts the new entry first", () => {
@@ -190,6 +191,67 @@ describe("missing binaries are values, not exceptions", () => {
   it("rejects an empty command instead of crashing on undefined", async () => {
     const result = await run([])
     expect(Result.isError(result)).toBe(true)
+  })
+})
+
+describe("child output streams into a log sink", () => {
+  // This is what keeps brew/stow/rustup inside the TUI instead of the app
+  // dropping out to a bare terminal to run them.
+  const capture = async (cmd: string[], opts = {}) => {
+    const lines: string[] = []
+    setLogSink((_level, message) => lines.push(message))
+    try {
+      const code = await runInteractiveCode(cmd, opts)
+      return { lines, code }
+    } finally {
+      setLogSink(null)
+    }
+  }
+
+  it("captures a child's stdout line by line", async () => {
+    const { lines, code } = await capture(["/bin/sh", "-c", "echo one; echo two; echo three"])
+    expect(code).toBe(0)
+    expect(lines).toEqual(["one", "two", "three"])
+  })
+
+  it("captures stderr too — warnings are output, not failures", async () => {
+    const { lines } = await capture(["/bin/sh", "-c", "echo to-err >&2"])
+    expect(lines).toContain("to-err")
+  })
+
+  it("still reports the real exit code", async () => {
+    const { code } = await capture(["/bin/sh", "-c", "echo x; exit 7"])
+    expect(code).toBe(7)
+  })
+
+  it("strips the child's ANSI colour so it cannot corrupt the pane layout", async () => {
+    const { lines } = await capture(["/bin/sh", "-c", "printf '\\033[0;32mgreen\\033[0m\\n'"])
+    expect(lines).toEqual(["green"])
+  })
+
+  it("drops blank lines rather than padding the pane with them", async () => {
+    const { lines } = await capture(["/bin/sh", "-c", "echo a; echo; echo; echo b"])
+    expect(lines).toEqual(["a", "b"])
+  })
+
+  it("emits a final line that has no trailing newline", async () => {
+    const { lines } = await capture(["/bin/sh", "-c", "printf 'no-newline'"])
+    expect(lines).toEqual(["no-newline"])
+  })
+
+  it("does NOT capture a child that needs the user's keyboard", async () => {
+    // sudo/chsh/$EDITOR must reach the real terminal, or the prompt is invisible
+    // and the keystrokes are swallowed.
+    const { lines } = await capture(["/bin/sh", "-c", "echo interactive"], { needsStdin: true })
+    expect(lines).toEqual([])
+  })
+
+  it("does not capture when no sink is installed — plain mode is unchanged", async () => {
+    const lines: string[] = []
+    setLogSink((_l, m) => lines.push(m))
+    setLogSink(null) // sink removed before the call
+    await runInteractiveCode(["/bin/sh", "-c", "echo straight-to-stdout"])
+    expect(lines).toEqual([])
   })
 })
 

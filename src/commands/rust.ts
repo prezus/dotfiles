@@ -35,7 +35,7 @@ export async function installRustup(): Promise<boolean> {
         "/bin/bash",
         "-c",
         "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
-      ]),
+      ], { needsStdin: true }),
     )
     if (code !== 0) {
       printWarning("rustup install failed")

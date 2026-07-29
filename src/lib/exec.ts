@@ -12,6 +12,7 @@
 
 import { Result } from "better-result"
 import { SpawnError } from "./errors.ts"
+import { getLogSink } from "./ui.ts"
 
 /** A process environment that later steps can amend, mimicking a single shell. */
 export class Env {
@@ -106,6 +107,15 @@ export type RunOptions = {
   /** Extra vars for this call only, e.g. NONINTERACTIVE=1. */
   extraEnv?: Record<string, string>
   stdin?: "inherit" | "ignore"
+  /**
+   * This child needs the USER's keyboard — a sudo password, chsh, $EDITOR, an
+   * installer that prompts. It can never be captured into a pane, because doing
+   * so would hide the prompt and swallow the keystrokes.
+   *
+   * Everything else (brew, stow, rustup toolchains, bun add) only PRINTS, so it
+   * streams into the UI instead of taking the screen.
+   */
+  needsStdin?: boolean
 }
 
 /**
@@ -167,6 +177,37 @@ export async function probe(cmd: string[], opts: RunOptions = {}): Promise<RunRe
  * Run a command that owns the terminal — sudo prompts, chsh, brew bundle,
  * third-party `curl | bash` installers. Inside a TUI, wrap in withSuspendedUI().
  */
+/**
+ * Read a stream line by line, emitting as the child produces output rather than
+ * buffering to the end — so a long `brew install` shows progress live.
+ */
+async function pump(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
+  const decoder = new TextDecoder()
+  let buffer = ""
+  for await (const chunk of stream) {
+    buffer += decoder.decode(chunk, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+    for (const line of lines) {
+      // Strip the child's own colour: the pane applies its own styling, and raw
+      // escapes would corrupt the layout.
+      const clean = line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").replace(/\r/g, "").trimEnd()
+      if (clean !== "") onLine(clean)
+    }
+  }
+  if (buffer.trim() !== "") onLine(buffer.trim())
+}
+
+/**
+ * Run a command that produces terminal output.
+ *
+ * When a log sink is installed (i.e. a UI is showing a pane) and the child does
+ * not need stdin, its output is STREAMED into that sink instead of inheriting
+ * the terminal. That is what keeps `brew`, `stow`, `rustup` and friends inside
+ * the TUI rather than making the app drop out to run them.
+ *
+ * Children that need the user's keyboard set `needsStdin` and always inherit.
+ */
 export async function runInteractive(
   cmd: string[],
   opts: RunOptions = {},
@@ -174,19 +215,32 @@ export async function runInteractive(
   const [bin, ...args] = cmd
   if (!bin) return Result.err(new SpawnError({ command: "", message: "empty command" }))
 
+  const sink = getLogSink()
+  const capture = sink !== null && opts.needsStdin !== true
+
   const spawned = Result.try(() =>
     Bun.spawn([bin, ...args], {
       cwd: opts.cwd,
       env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+      stdin: capture ? "ignore" : "inherit",
+      stdout: capture ? "pipe" : "inherit",
+      stderr: capture ? "pipe" : "inherit",
     }),
   )
   if (Result.isError(spawned)) {
     return Result.err(new SpawnError({ command: cmd.join(" "), message: String(spawned.error) }))
   }
-  return Result.ok(await spawned.value.exited)
+  const proc = spawned.value
+
+  if (!capture) return Result.ok(await proc.exited)
+
+  const emit = (line: string) => sink?.("info", line)
+  const [, , code] = await Promise.all([
+    pump(proc.stdout as ReadableStream<Uint8Array>, emit),
+    pump(proc.stderr as ReadableStream<Uint8Array>, emit),
+    proc.exited,
+  ])
+  return Result.ok(code)
 }
 
 /**

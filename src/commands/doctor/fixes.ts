@@ -28,7 +28,7 @@ export const FIXES: Record<string, Fix> = {
       const fish = await which("fish")
       if (!fish) return "fish is not installed"
       // chsh prompts for a password — must own the terminal.
-      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fish]))
+      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fish], { needsStdin: true }))
       return code === 0 ? `login shell → ${fish} (log out/in to apply)` : "chsh failed"
     },
   },

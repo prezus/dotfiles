@@ -16,7 +16,7 @@ async function registerShell(fishPath: string): Promise<void> {
 
   printInfo("Adding fish to /etc/shells (sudo)...")
   await withSuspendedUI(() =>
-    runInteractiveCode(["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`]),
+    runInteractiveCode(["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`], { needsStdin: true }),
   )
 }
 
@@ -56,7 +56,7 @@ export async function fish(): Promise<number> {
       printInfo(`login shell is ${process.env.SHELL} — run interactively to switch to fish`)
     } else if (await confirm("Set fish as your default shell?", true)) {
       // chsh prompts for a password — it must own the terminal.
-      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fishPath]))
+      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fishPath], { needsStdin: true }))
       if (code === 0) printSuccess("Default shell → fish (log out/in to apply)")
       else printWarning("chsh failed")
     }

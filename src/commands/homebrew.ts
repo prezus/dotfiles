@@ -75,7 +75,7 @@ export async function ensureHomebrew(): Promise<boolean> {
         "-c",
         'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
       ],
-      { extraEnv: { NONINTERACTIVE: "1" } },
+      { extraEnv: { NONINTERACTIVE: "1" }, needsStdin: true },
     ),
   )
   if (code !== 0) {

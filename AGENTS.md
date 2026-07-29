@@ -152,7 +152,7 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun run test` (158 of them) and `bun run typecheck`. Run them yourself —
+- **Tests:** `bun run test` (166 of them) and `bun run typecheck`. Run them yourself —
   there is deliberately no CI; this is a single-user repo. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.
@@ -160,9 +160,14 @@ sequences when piped.
   component. Components render state and perform intents; they decide nothing. This is what
   makes the interactive paths testable without a terminal — everything except drawing and
   restoring cooked mode, both of which are OpenTUI's.
-- **Anything that owns the terminal** — `sudo`, `chsh`, `brew bundle`, third-party
-  `curl | bash` installers — must be wrapped in `withSuspendedUI()`, or it deadlocks inside
-  a raw-mode render.
+- **Child output streams into the UI by default.** `runInteractive` checks for a log sink:
+  if one is installed (the TUI is showing a pane) it pipes the child and streams its lines
+  in, rather than inheriting the terminal. brew, stow, rustup toolchains and bun all render
+  inside the app.
+- **Mark a child `needsStdin: true` when it needs the USER's keyboard** — sudo, chsh,
+  $EDITOR, the `curl | bash` installers. Those always inherit the real terminal and must
+  also be wrapped in `withSuspendedUI()`, or the prompt is invisible and the keystrokes are
+  swallowed by the renderer. Getting this wrong is a hang, not a cosmetic bug.
 - **`run()` vs `probe()`:** `probe()` for version checks and feature detection, where a
   missing binary is an expected answer (it yields exit 127). `run()` returns a `Result` and
   reserves `Err` for the process failing to start; a non-zero exit is ordinary data.

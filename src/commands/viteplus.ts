@@ -52,6 +52,7 @@ export async function viteplus(): Promise<number> {
     const code = await withSuspendedUI(() =>
       runInteractiveCode(["/bin/bash", "-c", "curl -fsSL https://vite.plus | bash"], {
         extraEnv: { VP_NODE_MANAGER: "yes" },
+        needsStdin: true,
       }),
     )
     if (code !== 0) {
