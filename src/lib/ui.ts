@@ -1,3 +1,5 @@
+import { withTerminal } from "./terminal.ts"
+
 // Line-oriented output. Mirrors the bash print_* helpers byte-for-byte so the
 // Phase 1 parity gate is meaningful, but adds what bash never had: the original
 // emitted raw ANSI unconditionally, even when piped or redirected.
@@ -69,11 +71,17 @@ export async function confirm(prompt = "Continue?", defaultYes = false): Promise
   const suffix = defaultYes ? " [Y/n]: " : " [y/N]: "
   if (!process.stdin.isTTY) return defaultYes
 
-  process.stdout.write(prompt + suffix)
-  for await (const chunk of Bun.stdin.stream()) {
-    const answer = new TextDecoder().decode(chunk).trim().toLowerCase()
-    if (answer === "") return defaultYes
-    return answer === "y" || answer === "yes"
-  }
-  return defaultYes
+  // Must go through withTerminal for the same reason a sudo child does: when a
+  // TUI is mounted it owns stdin for its key handling, so a raw read here never
+  // receives the keypress and the app hangs. Suspending hands stdin back for the
+  // duration of the question.
+  return await withTerminal(async () => {
+    process.stdout.write(prompt + suffix)
+    for await (const chunk of Bun.stdin.stream()) {
+      const answer = new TextDecoder().decode(chunk).trim().toLowerCase()
+      if (answer === "") return defaultYes
+      return answer === "y" || answer === "yes"
+    }
+    return defaultYes
+  })
 }

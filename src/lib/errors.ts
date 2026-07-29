@@ -15,16 +15,3 @@ export class SpawnError extends TaggedError("SpawnError")<{
   command: string
   message: string
 }>() {}
-
-export class FileError extends TaggedError("FileError")<{
-  path: string
-  operation: string
-  message: string
-}>() {}
-
-export class ParseError extends TaggedError("ParseError")<{
-  source: string
-  message: string
-}>() {}
-
-export const describeError = (error: { message: string }): string => error.message

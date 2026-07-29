@@ -19,10 +19,6 @@ export function setRenderer(renderer: CliRenderer): void {
   setSuspendHandler(withSuspendedUI)
 }
 
-export function getRenderer(): CliRenderer | null {
-  return current
-}
-
 /**
  * Hand the terminal to an interactive child, then reclaim it. Safe to call
  * when no renderer is mounted (plain mode), where it just runs `fn`.
