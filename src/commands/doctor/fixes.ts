@@ -9,11 +9,11 @@
 // side effects and can be unit-tested without any risk of mutation.
 import { unlink } from "node:fs/promises"
 import { join } from "node:path"
-import { runLegacy } from "../../legacy.ts"
 import { FISH_TOOL_COMPLETIONS, HOME, HOME_DIR, PACKAGES_DIR } from "../../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../../lib/exec.ts"
 import { findBrokenSymlinks } from "../../lib/fs.ts"
 import { withSuspendedUI } from "../../tui/renderer.ts"
+import { skills } from "../skills.ts"
 
 export type Fix = {
   /** Shown next to the check in the TUI. Say what it will DO. */
@@ -93,9 +93,9 @@ export const FIXES: Record<string, Fix> = {
 }
 
 async function skillsInstall(): Promise<string> {
-  // Still the bash implementation until Phase 3; it prints and prompts, so it
-  // needs the terminal.
-  const code = await withSuspendedUI(() => runLegacy("skills", ["install"]))
+  // Native since Phase 3, but it may clone the skills repo, so it still needs
+  // the terminal for git's progress output.
+  const code = await withSuspendedUI(() => skills(["install"]))
   return code === 0 ? "skills symlinks wired" : "skills install failed"
 }
 

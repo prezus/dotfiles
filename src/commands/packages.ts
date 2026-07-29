@@ -4,6 +4,8 @@ import { join } from "node:path"
 import { bundleStatus, installCommand, readBundle, type BrewEntry } from "../lib/brew.ts"
 import { PACKAGES_DIR } from "../lib/env.ts"
 import { commandExists, runInteractiveCode } from "../lib/exec.ts"
+import { timestamp } from "../lib/fs.ts"
+import type { StepOutcome } from "../lib/steps.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 export async function checkPackages(): Promise<number> {
@@ -36,6 +38,55 @@ export async function checkPackages(): Promise<number> {
   }
 
   return missing.length === 0 ? 0 : 1
+}
+
+export type InstallProgress = {
+  entry: BrewEntry
+  index: number
+  total: number
+}
+
+/**
+ * Install everything in packages/bundle that isn't already present.
+ *
+ * Checks first, then installs the missing set one at a time. Bash ran
+ * `brew bundle` as a single opaque batch over all 239 directives and only fell
+ * back to per-package installs after the batch had already failed — so on a
+ * healthy machine you saw brew's firehose, and on a broken one you found out
+ * what failed at the very end. Checking first makes the common case ("nothing
+ * missing") a fast read-only pass, and makes progress real.
+ */
+export async function installPackages(
+  onProgress?: (progress: InstallProgress) => void,
+): Promise<StepOutcome> {
+  const entries = await readBundle()
+  if (entries.length === 0) return { ok: false, detail: "no packages/bundle" }
+
+  const { installed, missing } = await bundleStatus(entries)
+  if (missing.length === 0) {
+    return { ok: true, detail: `${installed.length} packages already installed` }
+  }
+
+  const failed: BrewEntry[] = []
+  for (const [index, entry] of missing.entries()) {
+    onProgress?.({ entry, index, total: missing.length })
+    const code = await runInteractiveCode(installCommand(entry))
+    if (code !== 0) failed.push(entry)
+  }
+
+  if (failed.length === 0) {
+    return { ok: true, detail: `installed ${missing.length}` }
+  }
+
+  // Same ledger format bash wrote, so `retry-failed` reads either one.
+  const ledger = join(PACKAGES_DIR, `failed_packages_${timestamp()}.txt`)
+  await Bun.write(ledger, failed.map((e) => `${e.kind}:${e.name}`).join("\n") + "\n")
+  printWarning(`Failed: ${failed.length} (saved to ${ledger}) — retry with: dotfiles retry-failed`)
+
+  return {
+    ok: false,
+    detail: `${missing.length - failed.length} installed, ${failed.length} failed`,
+  }
 }
 
 /** `packages/failed_packages_<ts>.txt`, newest first. */

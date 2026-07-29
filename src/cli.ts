@@ -11,14 +11,15 @@
 import { bunGlobals } from "./commands/bunglobals.ts"
 import { doctor } from "./commands/doctor/index.ts"
 import { edit } from "./commands/edit.ts"
+import { init } from "./commands/init.ts"
 import { checkPackages, retryFailed } from "./commands/packages.ts"
 import { fish } from "./commands/fish.ts"
 import { rust } from "./commands/rust.ts"
 import { skills } from "./commands/skills.ts"
 import { ssh } from "./commands/ssh.ts"
+import { update } from "./commands/update.ts"
 import { viteplus } from "./commands/viteplus.ts"
 import { stow } from "./commands/stow.ts"
-import { runLegacy } from "./legacy.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
 import { BOLD, RESET, printError } from "./lib/ui.ts"
 
@@ -36,13 +37,13 @@ const COMMANDS: Command[] = [
     name: "init",
     description: "Full setup: brew/rust/packages/bun/vite+/stow/ssh/fish/skills",
     help: "Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills",
-    run: (args) => runLegacy("init", args),
+    run: () => init(),
   },
   {
     name: "update",
     description: "Update everything: repos, brew, rust/cargo/go/bun/fisher/vite+, skills",
     help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → skills sync",
-    run: (args) => runLegacy("update", args),
+    run: (args) => update(args),
   },
   {
     name: "doctor",
