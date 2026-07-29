@@ -179,10 +179,17 @@ sequences when piped.
   brew bundle dump --file=packages/bundle --force
   gsed -i '/^vscode "/d' packages/bundle    # or: sed -i '' '/^vscode "/d' packages/bundle
   ```
-- **This CLI was adapted from dmmulroy's `dot`.** A few things came across that were
-  never ours — a Cloudflare WARP workaround for a product not installed here was carried
-  for months and is now removed. If something looks like it solves a problem you have never
-  had, check `git log -S` for when it appeared before assuming it earns its place.
+- **Origin, and why it still matters.** The first version of this CLI was a bash script
+  adapted from [dmmulroy's `dot`](https://github.com/dmmulroy/.dotfiles). None of that code
+  remains — it was deleted wholesale in the TypeScript rewrite — but some of its *assumptions*
+  survived the port unexamined. A Cloudflare WARP workaround for a product not installed here
+  rode along for months, ported verbatim and defended in a comment, before anyone asked
+  whether the premise was ever true.
+  **When something appears to solve a problem you have never had, run `git log -S '<string>'`
+  and find out when it arrived before assuming it earns its place.** Candidates that came in
+  with the adaptation and have never been re-justified: the `FISH_TOOL_COMPLETIONS` list, the
+  legacy-host SSH stanza (`ssh-rsa`, `diffie-hellman-group1-sha1` for `192.168.*`), and the
+  ESP/Xtensa Rust toolchain.
 - OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it. Stow
   no longer needs to: a path that blocks stow but whose bytes already match ours is
   **reclaimed** (the link is taken over, content unchanged). Our completions come from
