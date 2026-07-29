@@ -149,7 +149,8 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun test` (114 of them) and `bunx tsc --noEmit`, both run by CI. Prefer pure
+- **Tests:** `bun run test` (114 of them) and `bun run typecheck`. Run them yourself —
+  there is deliberately no CI; this is a single-user repo. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.
 - **Anything that owns the terminal** — `sudo`, `chsh`, `brew bundle`, third-party
