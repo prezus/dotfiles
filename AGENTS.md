@@ -50,7 +50,7 @@ dotfiles/
 | Zsh config | `home/.zshrc` (being migrated to fish) |
 | Prompt | `home/.config/starship/starship.toml` (both shells) |
 | Git identity / signing | `home/.gitconfig` |
-| SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `_setup_ssh`) |
+| SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Tiling WM | `home/.config/aerospace/aerospace.toml` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
@@ -112,7 +112,7 @@ sequences when piped.
 - **brew vs bun split** — brew for anything with a formula (auto-completions); bun only for JS-only tools (`bun-global.txt`). npm globals are eliminated.
 - **Node.js is managed by Vite+** (`VP_NODE_MANAGER=yes`), not Homebrew. `vp env` provides
   `node/npm/npx/corepack` shims in `~/.vite-plus/bin`. Default is **`latest`** (not Vite+'s
-  own default of latest-LTS) — set by `_viteplus_default_node` in the CLI, because that
+  own default of latest-LTS) — set by `setDefaultNodeLatest` in `src/commands/viteplus.ts`, because that
   choice lives in the machine-local `~/.vite-plus/config.json`, which is not stowed.
   Per-project: `vp env pin <v>` writes a standard `.node-version` (portable to fnm/mise/nvm
   if we ever migrate); `vp env use <v>` is session-only.
@@ -149,7 +149,7 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun test` (109 of them) and `bunx tsc --noEmit`, both run by CI. Prefer pure
+- **Tests:** `bun test` (114 of them) and `bunx tsc --noEmit`, both run by CI. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.
 - **Anything that owns the terminal** — `sudo`, `chsh`, `brew bundle`, third-party
@@ -165,7 +165,16 @@ sequences when piped.
   brew bundle dump --file=packages/bundle --force
   gsed -i '/^vscode "/d' packages/bundle    # or: sed -i '' '/^vscode "/d' packages/bundle
   ```
-- OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it.
+- OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it. Stow
+  no longer needs to: a path that blocks stow but whose bytes already match ours is
+  **reclaimed** (the link is taken over, content unchanged). Our completions come from
+  `<tool> completion fish`, i.e. from OrbStack's own binaries, so they match by construction.
+  If OrbStack re-adds its links, the next `dotfiles stow` simply reclaims them again.
+- **Generated completions stay gitignored, and `dotfiles doctor` watches them for drift.**
+  They are machine-generated, so git cannot tell you when a tool upgrade has made them
+  stale. doctor re-runs `<tool> completion fish` and compares, warning when the stored copy
+  no longer matches — the visibility that committing ~58KB of generated fish would have
+  bought, without the chore of re-resolving a stow conflict after every tool update.
 - **No `brew "fisher"`.** fisher self-installs as a fish *function* and is what actually
   manages `fish_plugins`; a brew copy is redundant and can shadow it. `dotfiles doctor`
   checks fisher via `fish -c 'type -q fisher'`, not via brew.
@@ -174,6 +183,6 @@ sequences when piped.
     walks the Brewfile and never enumerates the system, so it sees only this direction.
   - *installed → not in bundle*: `dotfiles doctor` → **Packages**. This is the silent
     direction — an ad-hoc `brew install` works fine here for months and is simply absent on
-    the next machine. `_check_untracked_packages` diffs a throwaway `brew bundle dump`
+    the next machine. the `untracked-packages` check diffs a throwaway `brew bundle dump`
     against the bundle (**to a temp file** — never over `packages/bundle`, which carries
     hand edits). Intentional exclusions go in `packages/bundle.ignore`, one glob per line.

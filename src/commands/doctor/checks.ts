@@ -312,6 +312,33 @@ const fishCompletionsCheck: Check = {
       }
     }
 
+    // These files are gitignored machine-generated output, so git can't tell us
+    // when a tool update has made them stale. Ask each binary what it would emit
+    // now and compare. This is the visibility that version-tracking them would
+    // have bought, without the 58KB of generated code or the chore of
+    // hand-resolving a stow conflict after every tool upgrade.
+    const stale = (
+      await Promise.all(
+        ours.map(async (tool) => {
+          const fresh = await probe([tool, "completion", "fish"])
+          if (!fresh.ok || fresh.stdout.trim() === "") return null
+          const current = await Bun.file(join(HOME_DIR, ".config", "fish", "completions", `${tool}.fish`)).text()
+          // Trailing-newline insensitive: shell redirection and Bun.write differ
+          // by one byte, which would otherwise report permanent false drift.
+          return current.trimEnd() === fresh.stdout.trimEnd() ? null : tool
+        }),
+      )
+    ).filter((t): t is string => t !== null)
+    stale.sort(order)
+
+    if (stale.length > 0) {
+      return {
+        status: "warn",
+        message: `fish completions — stale: ${stale.join(" ")} (run: dotfiles fish)`,
+        extra: [{ kind: "info", text: "the tool now emits different completions than the stored copy" }],
+      }
+    }
+
     const summary = ours.length ? ours.join(" ") : "none"
     if (shadowed.length === 0) {
       return { status: "ok", message: `fish completions — ${summary} present` }
