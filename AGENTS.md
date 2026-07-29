@@ -87,6 +87,8 @@ dotfiles/
 ## COMMANDS (`dotfiles`)
 
 ```
+dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
+                         Piped, redirected, under CI or --plain it prints help instead.
 dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills
 dotfiles update          Multi-select: repos / brew / language tools / re-stow / skills
                          --all or --only=repos,brew for non-interactive runs
@@ -150,7 +152,7 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun run test` (147 of them) and `bun run typecheck`. Run them yourself —
+- **Tests:** `bun run test` (158 of them) and `bun run typecheck`. Run them yourself —
   there is deliberately no CI; this is a single-user repo. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.

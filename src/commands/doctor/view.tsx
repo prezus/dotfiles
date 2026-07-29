@@ -39,7 +39,7 @@ export async function runDoctorTui(): Promise<number> {
   })
 }
 
-function DoctorView({ onExit }: { onExit: (code: number) => void }) {
+export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
   // Seed with every check as pending, then replace each as it resolves — the
   // panel fills in progressively instead of blocking on the slowest probe.
   const [rows, setRows] = useState<Row[]>(() =>

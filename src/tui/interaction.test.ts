@@ -5,8 +5,10 @@
 import { describe, expect, it } from "bun:test"
 import {
   initialDoctorNav,
+  initialHomeState,
   initialPickerState,
   reduceDoctorKey,
+  reduceHomeKey,
   reducePickerKey,
   type DoctorNav,
   type DoctorRow,
@@ -120,6 +122,67 @@ describe("doctor section folding", () => {
     const before = new Set(nav.collapsed)
     reduceDoctorKey(nav, { name: "space" }, rows)
     expect(nav.collapsed).toEqual(before)
+  })
+})
+
+// ─── home dashboard ─────────────────────────────────────────────────
+
+const homeCommands = ["init", "update", "doctor", "stow", "ssh", "skills"]
+
+describe("home dashboard", () => {
+  it("moves and clamps like the other views", () => {
+    let state = initialHomeState()
+    for (let i = 0; i < 20; i++) state = reduceHomeKey(state, { name: "down" }, homeCommands).state
+    expect(state.cursor).toBe(homeCommands.length - 1)
+    for (let i = 0; i < 20; i++) state = reduceHomeKey(state, { name: "up" }, homeCommands).state
+    expect(state.cursor).toBe(0)
+  })
+
+  it("enter runs the command under the cursor, by name", () => {
+    const state = { cursor: 2 }
+    const { intent } = reduceHomeKey(state, { name: "return" }, homeCommands)
+    expect(intent).toEqual({ kind: "run", command: "doctor" })
+  })
+
+  it("jumps to a command by first letter", () => {
+    const { state } = reduceHomeKey(initialHomeState(), { name: "d" }, homeCommands)
+    expect(homeCommands[state.cursor]).toBe("doctor")
+  })
+
+  it("cycles through commands sharing a first letter", () => {
+    const cmds = ["stow", "ssh", "skills"]
+    let state = initialHomeState() // on "stow"
+    state = reduceHomeKey(state, { name: "s" }, cmds).state
+    expect(cmds[state.cursor]).toBe("ssh")
+    state = reduceHomeKey(state, { name: "s" }, cmds).state
+    expect(cmds[state.cursor]).toBe("skills")
+    state = reduceHomeKey(state, { name: "s" }, cmds).state
+    expect(cmds[state.cursor]).toBe("stow") // wraps
+  })
+
+  it("does not move for a letter matching nothing", () => {
+    const { state } = reduceHomeKey({ cursor: 3 }, { name: "z" }, homeCommands)
+    expect(state.cursor).toBe(3)
+  })
+
+  it("q quits, r refreshes", () => {
+    expect(reduceHomeKey(initialHomeState(), { name: "q" }, homeCommands).intent.kind).toBe("quit")
+    expect(reduceHomeKey(initialHomeState(), { name: "r" }, homeCommands).intent.kind).toBe(
+      "refresh",
+    )
+  })
+
+  it("'r' refreshes rather than jumping to a command starting with r", () => {
+    // Explicit ordering guard: the refresh binding must win over letter-jump,
+    // or adding a command like `rust` would silently break it.
+    const withRust = [...homeCommands, "rust", "retry-failed"]
+    const { intent, state } = reduceHomeKey(initialHomeState(), { name: "r" }, withRust)
+    expect(intent.kind).toBe("refresh")
+    expect(state.cursor).toBe(0)
+  })
+
+  it("enter on an empty command list does nothing", () => {
+    expect(reduceHomeKey(initialHomeState(), { name: "return" }, []).intent.kind).toBe("none")
   })
 })
 

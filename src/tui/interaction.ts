@@ -78,6 +78,53 @@ export function reduceDoctorKey(
   return { nav, intent: { kind: "none" } }
 }
 
+// ─── home dashboard ─────────────────────────────────────────────────
+
+export type HomeState = { cursor: number }
+
+export type HomeIntent =
+  | { kind: "none" }
+  | { kind: "quit" }
+  /** Run the command under the cursor. */
+  | { kind: "run"; command: string }
+  | { kind: "refresh" }
+
+export const initialHomeState = (): HomeState => ({ cursor: 0 })
+
+export function reduceHomeKey(
+  state: HomeState,
+  key: KeyEvent,
+  commands: readonly string[],
+): { state: HomeState; intent: HomeIntent } {
+  const last = Math.max(0, commands.length - 1)
+  const cursor = clamp(state.cursor, last)
+
+  if (isQuit(key)) return { state, intent: { kind: "quit" } }
+  if (isDown(key)) return { state: { cursor: clamp(cursor + 1, last) }, intent: { kind: "none" } }
+  if (isUp(key)) return { state: { cursor: clamp(cursor - 1, last) }, intent: { kind: "none" } }
+  if (key.name === "r") return { state, intent: { kind: "refresh" } }
+
+  if (key.name === "return") {
+    const command = commands[cursor]
+    if (command === undefined) return { state, intent: { kind: "none" } }
+    return { state, intent: { kind: "run", command } }
+  }
+
+  // First-letter jump: `d` for doctor, `u` for update, and so on. Ambiguous
+  // letters cycle through the matches rather than always landing on the first.
+  if (key.name && key.name.length === 1 && /[a-z]/.test(key.name)) {
+    const matches = commands
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => c.startsWith(key.name as string))
+    if (matches.length > 0) {
+      const next = matches.find(({ i }) => i > cursor) ?? matches[0]
+      if (next) return { state: { cursor: next.i }, intent: { kind: "none" } }
+    }
+  }
+
+  return { state, intent: { kind: "none" } }
+}
+
 // ─── update picker ──────────────────────────────────────────────────
 
 export type PickerState = {

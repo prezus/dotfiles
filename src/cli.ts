@@ -21,7 +21,7 @@ import { update } from "./commands/update.ts"
 import { viteplus } from "./commands/viteplus.ts"
 import { stow } from "./commands/stow.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
-import { BOLD, RESET, printError } from "./lib/ui.ts"
+import { BOLD, RESET, isInteractive, printError } from "./lib/ui.ts"
 
 type Command = {
   name: string
@@ -144,7 +144,28 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
 
-  const name = first ?? "help"
+  // Bare `dotfiles` opens the dashboard. A TUI you have to remember a
+  // subcommand to reach isn't much of a TUI.
+  //
+  // Only on a real terminal, though: piped, redirected, under CI or with
+  // --plain it still prints help, because scripts and `dotfiles | grep` must
+  // never land in a full-screen app.
+  if (first === undefined) {
+    if (!isInteractive()) {
+      printHelp()
+      return 0
+    }
+    const { runHomeTui } = await import("./tui/home.tsx")
+    return await runHomeTui(
+      COMMANDS.filter((c) => c.name !== "help").map((c) => ({
+        name: c.name,
+        description: c.description,
+        run: () => c.run([]),
+      })),
+    )
+  }
+
+  const name = first
   if (name === "-h" || name === "--help") {
     printHelp()
     return 0
