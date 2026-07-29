@@ -19,7 +19,7 @@ import { ssh } from "./ssh.ts"
 import { stow } from "./stow.ts"
 import { viteplus } from "./viteplus.ts"
 import { runSteps, type Step } from "../lib/steps.ts"
-import { printError, printHeader, printSuccess, printWarning } from "../lib/ui.ts"
+import { printError, printHeader, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 
 /** Adapt a command that returns an exit code into a step outcome. */
 const fromExitCode = async (fn: () => Promise<number>) => {
@@ -40,8 +40,9 @@ export function initSteps(): Step[] {
       title: "Rust (rustup)",
       // Before packages: the bundle has `cargo "…"` entries.
       run: async () => {
-        const ok = await installRustup()
-        if (ok) await applyRustList()
+        const installed = await installRustup()
+        const configured = installed ? await applyRustList() : false
+        const ok = installed && configured
         return { ok, detail: ok ? undefined : "rust setup incomplete" }
       },
     },
@@ -56,8 +57,8 @@ export function initSteps(): Step[] {
       title: "Rust (ESP)",
       // After packages: espup is a cargo tool from the bundle.
       run: async () => {
-        await installRustEsp()
-        return { ok: true }
+        const ok = await installRustEsp()
+        return { ok, detail: ok ? undefined : "ESP toolchain incomplete" }
       },
     },
     { id: "bun", title: "Bun globals", run: () => fromExitCode(bunGlobals) },
@@ -80,7 +81,7 @@ export async function init(): Promise<number> {
 
   const summary = await runSteps(steps, (report, index, total) => {
     if (report.state === "running") {
-      console.log(`\n[${index + 1}/${total}] ${report.step.title}`)
+      printRaw(`\n[${index + 1}/${total}] ${report.step.title}`)
       return
     }
     if (report.state === "pending" || report.state === "skipped") return

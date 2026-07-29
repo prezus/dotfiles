@@ -142,6 +142,19 @@ describe("planStow", () => {
     expect(plan.conflicts[0]?.reason).toBe("foreign-link")
   })
 
+  it("does not claim a link into a sibling whose name shares the source prefix", async () => {
+    await writeFile(join(source, ".zshrc"), "ours")
+    const sibling = join(root, "home-old")
+    await mkdir(sibling)
+    await writeFile(join(sibling, ".zshrc"), "foreign")
+    await symlink(join("..", "home-old", ".zshrc"), join(target, ".zshrc"))
+
+    const plan = await planStow(source, target)
+
+    expect(plan.relink).toHaveLength(0)
+    expect(plan.conflicts[0]?.reason).toBe("foreign-link")
+  })
+
   it("flags OrbStack-style absolute completions as conflicts", async () => {
     // The real case on this machine: OrbStack installs its own
     // docker/kubectl/orbctl fish completions as ABSOLUTE symlinks into

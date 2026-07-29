@@ -8,7 +8,7 @@ import { createRoot, useKeyboard } from "@opentui/react"
 import { useState } from "react"
 import type { UpdateTask } from "../commands/update.ts"
 import { initialPickerState, reducePickerKey, type PickerState } from "./interaction.ts"
-import { setRenderer } from "./renderer.ts"
+import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 
 /** Resolves to the chosen ids, or null if the user cancelled. */
@@ -21,6 +21,7 @@ export async function pickUpdateTasks(tasks: UpdateTask[]): Promise<Set<string> 
       <Picker
         tasks={tasks}
         onDone={(chosen) => {
+          clearRenderer(renderer)
           renderer.destroy()
           resolve(chosen)
         }}

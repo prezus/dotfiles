@@ -19,6 +19,14 @@ export function setRenderer(renderer: CliRenderer): void {
   setSuspendHandler(withSuspendedUI)
 }
 
+/** Stop routing terminal hand-offs to a renderer that is about to be destroyed. */
+export function clearRenderer(renderer: CliRenderer): void {
+  // A stale view must not clear a newer renderer that replaced it.
+  if (current !== renderer) return
+  current = null
+  setSuspendHandler(null)
+}
+
 /**
  * Hand the terminal to an interactive child, then reclaim it. Safe to call
  * when no renderer is mounted (plain mode), where it just runs `fn`.

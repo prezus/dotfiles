@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { HOME, SKILLS_REPO, SKILLS_SRC } from "../lib/env.ts"
 import { probe, runInteractiveCode } from "../lib/exec.ts"
 import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
-import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { printError, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 
 const AGENTS_LINK = join(HOME, ".agents", "skills")
 const CLAUDE_LINK = join(HOME, ".claude", "skills")
@@ -98,7 +98,7 @@ async function status(): Promise<number> {
   printInfo(`skills source: ${SKILLS_SRC} (${count} skills)`)
 
   const show = async (label: string, path: string) => {
-    console.log(`  ${label} → ${(await readlinkSafe(path)) ?? "(not linked)"}`)
+    printRaw(`  ${label} → ${(await readlinkSafe(path)) ?? "(not linked)"}`)
   }
   await show("~/.agents/skills", AGENTS_LINK)
   await show("~/.claude/skills", CLAUDE_LINK)
@@ -111,7 +111,7 @@ async function status(): Promise<number> {
     Result.match(parsed, {
       ok: (data) => {
         for (const v of data.vendors) {
-          console.log(`  vendored: ${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
+          printRaw(`  vendored: ${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
         }
       },
       err: () => printWarning("  vendor-manifest.json is unreadable"),

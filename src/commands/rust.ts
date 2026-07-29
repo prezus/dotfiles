@@ -13,6 +13,19 @@ import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 const RUST_LIST = join(PACKAGES_DIR, "rust.txt")
 
+export type RustRuntime = {
+  probe: typeof probe
+  commandExists: typeof commandExists
+  runInteractiveCode: typeof runInteractiveCode
+}
+
+const defaultRustRuntime: RustRuntime = { probe, commandExists, runInteractiveCode }
+
+export type RustOptions = {
+  rustListPath?: string
+  runtime?: RustRuntime
+}
+
 /** Put ~/.cargo/bin on PATH for the rest of this process. */
 export async function activateCargo(): Promise<void> {
   const cargoEnv = Bun.file(join(env.get("HOME") ?? "", ".cargo", "env"))
@@ -46,71 +59,84 @@ export async function installRustup(): Promise<boolean> {
   return true
 }
 
-export async function applyRustList(): Promise<void> {
-  const file = Bun.file(RUST_LIST)
+export async function applyRustList(options: RustOptions = {}): Promise<boolean> {
+  const file = Bun.file(options.rustListPath ?? RUST_LIST)
+  const runtime = options.runtime ?? defaultRustRuntime
   if (!(await file.exists())) {
     printInfo("no rust.txt; skipping toolchains/targets")
-    return
+    return true
   }
 
+  let ok = true
   const entries = parseRustList(await file.text())
   for (const entry of entries) {
+    let res
     switch (entry.kind) {
-      case "toolchain": {
+      case "toolchain":
         // --no-self-update: rustup's own updates are handled by `dotfiles update`.
-        const res = await probe(["rustup", "toolchain", "install", entry.value, "--no-self-update"])
-        if (res.ok) printSuccess(`toolchain: ${entry.value}`)
+        res = await runtime.probe(["rustup", "toolchain", "install", entry.value, "--no-self-update"])
         break
-      }
-      case "component": {
-        const res = await probe(["rustup", "component", "add", entry.value])
-        if (res.ok) printSuccess(`component: ${entry.value}`)
+      case "component":
+        res = await runtime.probe(["rustup", "component", "add", entry.value])
         break
-      }
-      case "target": {
-        const res = await probe(["rustup", "target", "add", entry.value])
-        if (res.ok) printSuccess(`target: ${entry.value}`)
+      case "target":
+        res = await runtime.probe(["rustup", "target", "add", entry.value])
         break
-      }
       case "esp":
-        break // handled separately, after packages
+        continue // handled separately, after packages
+    }
+
+    if (res.ok) printSuccess(`${entry.kind}: ${entry.value}`)
+    else {
+      ok = false
+      printWarning(`${entry.kind} failed: ${entry.value}`)
     }
   }
+  return ok
 }
 
 /**
  * ESP (Xtensa) toolchain via espup. Separate from the rest because `espup` is a
  * cargo tool from packages/bundle, so this must run AFTER package install.
  */
-export async function installRustEsp(): Promise<void> {
-  const file = Bun.file(RUST_LIST)
-  if (!(await file.exists())) return
+export async function installRustEsp(options: RustOptions = {}): Promise<boolean> {
+  const file = Bun.file(options.rustListPath ?? RUST_LIST)
+  const runtime = options.runtime ?? defaultRustRuntime
+  if (!(await file.exists())) return true
   const wanted = parseRustList(await file.text()).some((e) => e.kind === "esp")
-  if (!wanted) return
+  if (!wanted) return true
 
-  if (!(await commandExists("espup"))) {
+  if (!(await runtime.commandExists("espup"))) {
     printWarning("espup not installed yet (comes from packages/bundle); skipping ESP toolchain")
-    return
+    return false
   }
 
-  const toolchains = await probe(["rustup", "toolchain", "list"])
+  const toolchains = await runtime.probe(["rustup", "toolchain", "list"])
+  if (!toolchains.ok) {
+    printWarning("could not inspect installed Rust toolchains")
+    return false
+  }
   if (toolchains.stdout.split("\n").some((l) => l.startsWith("esp"))) {
     printSuccess("ESP (Xtensa) toolchain already installed")
-    return
+    return true
   }
 
   printInfo("Installing ESP (Xtensa) toolchain via espup...")
-  const code = await runInteractiveCode(["espup", "install"])
-  if (code === 0) printSuccess("ESP toolchain installed")
-  else printWarning("espup install failed")
+  const code = await runtime.runInteractiveCode(["espup", "install"])
+  if (code === 0) {
+    printSuccess("ESP toolchain installed")
+    return true
+  }
+  printWarning("espup install failed")
+  return false
 }
 
 export async function rust(): Promise<number> {
-  const ok = await installRustup()
-  if (!ok) return 1
-  await applyRustList()
-  await installRustEsp()
-  return 0
+  const installed = await installRustup()
+  if (!installed) return 1
+  const listOk = await applyRustList()
+  const espOk = await installRustEsp()
+  return listOk && espOk ? 0 : 1
 }
 
 /** `dotfiles viteplus` and friends need this too; exported for init. */

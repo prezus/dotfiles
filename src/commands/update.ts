@@ -7,8 +7,8 @@ import { readBundle } from "../lib/brew.ts"
 import { DOTFILES_DIR, HOME, SKILLS_REPO } from "../lib/env.ts"
 import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import { isDirectory, pathExists } from "../lib/fs.ts"
-import { runSteps, type Step } from "../lib/steps.ts"
-import { isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
+import { isInteractive, printHeader, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 import { skills } from "./skills.ts"
 import { stow } from "./stow.ts"
 
@@ -34,48 +34,71 @@ export const UPDATE_TASKS: UpdateTask[] = [
   { id: "skills", title: "Vendored skills", description: "re-sync from upstream", default: false },
 ]
 
-/** Package sources `brew upgrade` does not touch. */
-async function updateExtras(): Promise<void> {
-  if (await commandExists("rustup")) {
+export type UpdateRuntime = {
+  commandExists: typeof commandExists
+  runInteractiveCode: typeof runInteractiveCode
+  probe: typeof probe
+  readBundle: typeof readBundle
+  pathExists: typeof pathExists
+}
+
+const defaultUpdateRuntime: UpdateRuntime = {
+  commandExists,
+  runInteractiveCode,
+  probe,
+  readBundle,
+  pathExists,
+}
+
+/** Package sources `brew upgrade` does not touch. Attempts all and reports all failures. */
+export async function updateExtras(runtime: UpdateRuntime = defaultUpdateRuntime): Promise<StepOutcome> {
+  const failed: string[] = []
+  const runOne = async (label: string, command: string[]): Promise<void> => {
+    if ((await runtime.runInteractiveCode(command)) !== 0) failed.push(label)
+  }
+
+  if (await runtime.commandExists("rustup")) {
     printInfo("rustup update...")
-    await runInteractiveCode(["rustup", "update"])
+    await runOne("rustup", ["rustup", "update"])
   }
-  if (await commandExists("cargo-install-update")) {
+  if (await runtime.commandExists("cargo-install-update")) {
     printInfo("cargo install-update -a...")
-    await runInteractiveCode(["cargo", "install-update", "-a"])
+    await runOne("cargo", ["cargo", "install-update", "-a"])
   }
-  if (await commandExists("go")) {
-    // The go tools are declared in the Brewfile as `go "…"` lines; brew does
-    // not update them, so re-install each at @latest.
-    const goEntries = (await readBundle()).filter((e) => e.kind === "go")
+  if (await runtime.commandExists("go")) {
+    const goEntries = (await runtime.readBundle()).filter((e) => e.kind === "go")
     if (goEntries.length > 0) {
       printInfo(`updating ${goEntries.length} go tool(s)...`)
       for (const entry of goEntries) {
-        await runInteractiveCode(["go", "install", `${entry.name}@latest`])
+        await runOne(`go:${entry.name}`, ["go", "install", `${entry.name}@latest`])
       }
     }
   }
-  if (await commandExists("bun")) {
+  if (await runtime.commandExists("bun")) {
     printInfo("bun update -g...")
-    await runInteractiveCode(["bun", "update", "-g"])
+    await runOne("bun", ["bun", "update", "-g"])
   }
-  const fisher = await probe(["fish", "-c", "type -q fisher; and fisher update"])
-  if (fisher.ok) printSuccess("fisher plugins updated")
+  if (await runtime.commandExists("fish")) {
+    const fisher = await runtime.probe(["fish", "-c", "type -q fisher"])
+    if (fisher.ok) {
+      await runOne("fisher", ["fish", "-c", "fisher update"])
+      if (!failed.includes("fisher")) printSuccess("fisher plugins updated")
+    }
+  }
 
-  // Pi extensions are the same shape as fisher plugins: `pi install` records the
-  // source in settings.json, which is stowed and therefore committed — but
-  // nothing ever installed them back. A fresh machine would stow a settings file
-  // naming extensions and silently have none of them.
-  if (await commandExists("pi")) {
+  // Pi extensions are recorded in stowed settings, but the installs are local.
+  if (await runtime.commandExists("pi")) {
     printInfo("pi update --extensions...")
-    await runInteractiveCode(["pi", "update", "--extensions"])
+    await runOne("pi extensions", ["pi", "update", "--extensions"])
   }
 
   const vp = join(env.get("HOME") ?? HOME, ".vite-plus", "bin", "vp")
-  if (await pathExists(vp)) {
+  if (await runtime.pathExists(vp)) {
     printInfo("Vite+ upgrade (vp)...")
-    await runInteractiveCode([vp, "upgrade"])
+    await runOne("Vite+", [vp, "upgrade"])
   }
+
+  return failed.length === 0 ? { ok: true } : { ok: false, detail: `failed: ${failed.join(", ")}` }
 }
 
 /** HEAD before and after a pull, so we can tell whether we rewrote ourselves. */
@@ -83,20 +106,32 @@ async function gitHead(repo: string): Promise<string> {
   return (await probe(["git", "-C", repo, "rev-parse", "HEAD"])).stdout.trim()
 }
 
-async function pullRepos(): Promise<{ selfChanged: boolean }> {
+async function pullRepos(): Promise<{ ok: boolean; selfChanged: boolean; detail?: string }> {
+  const failed: string[] = []
   const before = await gitHead(DOTFILES_DIR)
   const pull = await runInteractiveCode(["git", "-C", DOTFILES_DIR, "pull", "--ff-only"])
   if (pull === 0) printSuccess("dotfiles updated")
-  else printWarning("dotfiles pull skipped/failed")
+  else {
+    failed.push("dotfiles pull")
+    printWarning("dotfiles pull skipped/failed")
+  }
   const after = await gitHead(DOTFILES_DIR)
 
   if (await isDirectory(join(SKILLS_REPO, ".git"))) {
     const code = await runInteractiveCode(["git", "-C", SKILLS_REPO, "pull", "--ff-only"])
     if (code === 0) printSuccess("skills repo updated")
-    else printWarning("skills pull skipped/failed")
+    else {
+      failed.push("skills pull")
+      printWarning("skills pull skipped/failed")
+    }
   }
 
-  if (before === after || before === "" || after === "") return { selfChanged: false }
+  const outcome = (selfChanged: boolean) => ({
+    ok: failed.length === 0,
+    selfChanged,
+    detail: failed.length > 0 ? `failed: ${failed.join(", ")}` : undefined,
+  })
+  if (before === after || before === "" || after === "") return outcome(false)
 
   // Did the pull touch code this process is running? Bash had a real hazard
   // here: it pulls the very file the interpreter is reading, and bash reads
@@ -107,7 +142,7 @@ async function pullRepos(): Promise<{ selfChanged: boolean }> {
   const touchedSelf = changed.stdout
     .split("\n")
     .some((f) => f.startsWith("src/") || f === "bun.lock" || f === "package.json" || f === "dotfiles")
-  return { selfChanged: touchedSelf }
+  return outcome(touchedSelf)
 }
 
 function selectedTasks(argv: string[]): Set<string> {
@@ -157,7 +192,7 @@ export async function update(argv: string[] = []): Promise<number> {
       run: async () => {
         const result = await pullRepos()
         selfChanged = result.selfChanged
-        return { ok: true }
+        return { ok: result.ok, detail: result.detail }
       },
     })
   }
@@ -176,10 +211,7 @@ export async function update(argv: string[] = []): Promise<number> {
     steps.push({
       id: "extras",
       title: "Language tools",
-      run: async () => {
-        await updateExtras()
-        return { ok: true }
-      },
+      run: () => updateExtras(),
     })
   }
   if (chosen.has("stow")) {
@@ -194,7 +226,7 @@ export async function update(argv: string[] = []): Promise<number> {
   }
 
   const summary = await runSteps(steps, (report, index, total) => {
-    if (report.state === "running") console.log(`\n[${index + 1}/${total}] ${report.step.title}`)
+    if (report.state === "running") printRaw(`\n[${index + 1}/${total}] ${report.step.title}`)
     else if (report.state === "warn") printWarning(`${report.step.title} incomplete`)
   })
 

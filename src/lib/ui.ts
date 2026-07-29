@@ -26,7 +26,7 @@ export const CYAN = sgr("0;36")
 export const RESET = sgr("0")
 export const BOLD = sgr("1")
 
-export type LogLevel = "header" | "ok" | "warn" | "error" | "info"
+export type LogLevel = "header" | "ok" | "warn" | "error" | "info" | "raw"
 
 /**
  * Where print* output goes. Normally stdout; the TUI swaps in a sink so command
@@ -62,6 +62,8 @@ export const printSuccess = (msg: string): void => emit("ok", msg, `${GREEN}✓$
 export const printError = (msg: string): void => emit("error", msg, `${RED}✗${RESET} ${msg}`)
 export const printWarning = (msg: string): void => emit("warn", msg, `${YELLOW}⚠${RESET} ${msg}`)
 export const printInfo = (msg: string): void => emit("info", msg, `${CYAN}ℹ${RESET} ${msg}`)
+/** Sink-aware output with no status glyph, for progress and indented detail lines. */
+export const printRaw = (msg: string): void => emit("raw", msg, msg)
 
 /**
  * Yes/no prompt — the port of bash `confirm()`. Non-interactive callers get the

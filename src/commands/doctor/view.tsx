@@ -8,11 +8,11 @@ import { createRoot, useKeyboard } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { BOLD, STATUS_COLOR, STATUS_GLYPH, theme } from "../../tui/theme.ts"
 import { initialDoctorNav, reduceDoctorKey } from "../../tui/interaction.ts"
-import { setRenderer } from "../../tui/renderer.ts"
+import { clearRenderer, setRenderer } from "../../tui/renderer.ts"
 import {
   CHECKS,
   SECTIONS,
-  countCriticalIssues,
+  doctorExitCode,
   isApplicable,
   type CompletedCheck,
   type Section,
@@ -31,6 +31,7 @@ export async function runDoctorTui(): Promise<number> {
     createRoot(renderer).render(
       <DoctorView
         onExit={(code) => {
+          clearRenderer(renderer)
           renderer.destroy()
           resolve(code)
         }}
@@ -123,7 +124,10 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
     switch (intent.kind) {
       case "quit": {
         const done = rows.filter((r): r is CompletedCheck => !isPending(r))
-        onExit(countCriticalIssues(done) === 0 ? 0 : 1)
+        const pendingCritical = rows.some(
+          (row) => isPending(row) && CHECKS.some((check) => check.id === row.id && check.critical),
+        )
+        onExit(doctorExitCode(done, pendingCritical))
         break
       }
       case "fix":

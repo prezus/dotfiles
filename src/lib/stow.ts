@@ -13,7 +13,7 @@
 // i.e. links are RELATIVE to the link's own parent directory, and stow descends
 // through directories that already exist rather than folding them.
 import { lstat, readdir, readlink } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { HOME, HOME_DIR } from "./env.ts"
 
 export type StowAction =
@@ -130,13 +130,18 @@ export async function planStow(
 
       if (resolved === src) {
         actions.push({ kind: "ok", path: rel, link, target })
-      } else if (resolved.startsWith(sourceDir)) {
-        // Ours, but stale — points elsewhere inside the package.
-        actions.push({ kind: "relink", path: rel, link, target, current })
-      } else if (await sameContent(link, src)) {
-        actions.push({ kind: "reclaim", path: rel, link, target, current })
       } else {
-        actions.push({ kind: "conflict", path: rel, link, target, reason: "foreign-link", current })
+        const fromSource = relative(sourceDir, resolved)
+        const insideSource =
+          fromSource !== ".." && !fromSource.startsWith(`..${sep}`) && !isAbsolute(fromSource)
+        if (insideSource) {
+          // Ours, but stale — points elsewhere inside the package.
+          actions.push({ kind: "relink", path: rel, link, target, current })
+        } else if (await sameContent(link, src)) {
+          actions.push({ kind: "reclaim", path: rel, link, target, current })
+        } else {
+          actions.push({ kind: "conflict", path: rel, link, target, reason: "foreign-link", current })
+        }
       }
       return
     }

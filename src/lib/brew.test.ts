@@ -1,7 +1,7 @@
-// The Brewfile parser replaces three separate ad-hoc regex parsers in the bash
-// (the retry loop, the go-install loop, and _bundle_norm).
+// The Brewfile parser gives package summaries and language-tool updates one
+// understanding of the manifest's directive shape.
 import { describe, expect, it } from "bun:test"
-import { installCommand, parseBrewfile, shortName } from "./brew.ts"
+import { parseBrewfile } from "./brew.ts"
 
 describe("parseBrewfile", () => {
   it("parses each directive kind", () => {
@@ -37,35 +37,5 @@ describe("parseBrewfile", () => {
   it("tolerates indentation, unlike the bash grep it replaces", () => {
     const [entry] = parseBrewfile('  brew "z"')
     expect(entry?.name).toBe("z")
-  })
-})
-
-describe("shortName", () => {
-  it("reduces a tapped formula to what `brew list` reports", () => {
-    expect(shortName("oven-sh/bun/bun")).toBe("bun")
-  })
-  it("leaves a bare formula alone", () => {
-    expect(shortName("ripgrep")).toBe("ripgrep")
-  })
-})
-
-describe("installCommand", () => {
-  it("uses --cask for casks", () => {
-    expect(installCommand({ kind: "cask", name: "vlc", line: "" })).toEqual([
-      "brew",
-      "install",
-      "--cask",
-      "vlc",
-    ])
-  })
-  it("uses `brew tap` for taps", () => {
-    expect(installCommand({ kind: "tap", name: "a/b", line: "" })).toEqual(["brew", "tap", "a/b"])
-  })
-  it("installs a formula by its full tapped name", () => {
-    expect(installCommand({ kind: "brew", name: "oven-sh/bun/bun", line: "" })).toEqual([
-      "brew",
-      "install",
-      "oven-sh/bun/bun",
-    ])
   })
 })

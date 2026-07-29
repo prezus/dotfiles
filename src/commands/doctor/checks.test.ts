@@ -7,6 +7,7 @@ import {
   CHECKS,
   SECTIONS,
   countCriticalIssues,
+  doctorExitCode,
   globToRegExp,
   normalizeBundle,
   runChecks,
@@ -80,6 +81,12 @@ describe("check registry", () => {
       "git",
       "stow",
     ])
+  })
+})
+
+describe("doctorExitCode", () => {
+  it("does not report success while a critical check is still pending", () => {
+    expect(doctorExitCode([], true)).toBe(1)
   })
 })
 

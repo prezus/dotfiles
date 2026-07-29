@@ -708,3 +708,9 @@ export async function runChecks(
 /** Critical failures only — what the footer counts and the exit code reflects. */
 export const countCriticalIssues = (checks: CompletedCheck[]): number =>
   checks.filter((c) => c.critical && c.result.status === "fail").length
+
+/** A health check is successful only after every critical check has completed. */
+export const doctorExitCode = (
+  checks: CompletedCheck[],
+  hasPendingCritical = false,
+): number => (hasPendingCritical || countCriticalIssues(checks) > 0 ? 1 : 0)

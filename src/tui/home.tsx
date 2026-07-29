@@ -17,7 +17,7 @@ import { VERSION } from "../lib/env.ts"
 import { setLogSink, type LogLevel } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import { initialHomeState, reduceHomeKey } from "./interaction.ts"
-import { setRenderer } from "./renderer.ts"
+import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
 
@@ -42,6 +42,7 @@ export async function runHomeTui(commands: HomeCommand[]): Promise<number> {
       <Home
         commands={commands}
         onExit={(code) => {
+          clearRenderer(renderer)
           renderer.destroy()
           resolve(code)
         }}
@@ -167,6 +168,7 @@ function Home({
       warn: theme.yellow,
       error: theme.red,
       info: theme.aqua,
+      raw: theme.fgMuted,
     }
     const glyph: Record<LogLevel, string> = {
       header: "▸",
@@ -174,6 +176,7 @@ function Home({
       warn: "⚠",
       error: "✗",
       info: "ℹ",
+      raw: " ",
     }
     // Keep the tail visible rather than the head — the interesting part of a
     // command's output is almost always the end.
