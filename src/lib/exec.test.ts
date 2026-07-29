@@ -91,6 +91,46 @@ export PATH="/opt/homebrew/bin:/opt/homebrew/sbin\${PATH+:$PATH}";
   })
 })
 
+describe("Env.absorbShellenv — modern brew emits no PATH line", () => {
+  // Real `brew shellenv` output, Homebrew 6.0.13. There is NO `export PATH=`
+  // any more: PATH is delegated to path_helper inside a nested eval, which bash
+  // got for free via `eval` and we cannot.
+  //
+  // This test exists to stop anyone "simplifying" activateHomebrew() down to
+  // just absorbShellenv(). If that happened, `init` would install Homebrew and
+  // then fail at step 2 with "brew: command not found" — but ONLY on a machine
+  // that didn't already have brew, i.e. never in local testing.
+  const MODERN = `export HOMEBREW_PREFIX="/opt/homebrew";
+export HOMEBREW_CELLAR="/opt/homebrew/Cellar";
+export HOMEBREW_REPOSITORY="/opt/homebrew";
+fpath[1,0]="/opt/homebrew/share/zsh/site-functions";
+export FPATH;
+eval "$(/usr/bin/env PATH_HELPER_ROOT="/opt/homebrew" /usr/libexec/path_helper -s)"
+export INFOPATH="/opt/homebrew/share/info:\${INFOPATH:-}";`
+
+  it("absorbs the HOMEBREW_* variables", () => {
+    const env = new Env({ PATH: "/usr/bin" })
+    env.absorbShellenv(MODERN)
+    expect(env.get("HOMEBREW_PREFIX")).toBe("/opt/homebrew")
+    expect(env.get("HOMEBREW_CELLAR")).toBe("/opt/homebrew/Cellar")
+  })
+
+  it("does NOT put brew on PATH — hence the explicit prepend in homebrew.ts", () => {
+    const env = new Env({ PATH: "/usr/bin" })
+    env.absorbShellenv(MODERN)
+    expect(env.get("PATH")).toBe("/usr/bin")
+    expect(env.get("PATH")).not.toContain("/opt/homebrew/bin")
+  })
+
+  it("prepending the prefix explicitly is what makes brew reachable", () => {
+    const env = new Env({ PATH: "/usr/bin" })
+    env.absorbShellenv(MODERN)
+    env.prepend("PATH", "/opt/homebrew/sbin")
+    env.prepend("PATH", "/opt/homebrew/bin")
+    expect(env.get("PATH")).toBe("/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin")
+  })
+})
+
 describe("Env isolation", () => {
   it("does not mutate the object it was constructed from", () => {
     const base = { PATH: "/usr/bin" }

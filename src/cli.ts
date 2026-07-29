@@ -8,10 +8,15 @@
 // completion (home/.config/fish/completions/dotfiles.fish) calls the hidden
 // `__commands` subcommand on every tab-complete, so adding an entry here is all
 // that is required — there is no second list to keep in sync.
+import { bunGlobals } from "./commands/bunglobals.ts"
 import { doctor } from "./commands/doctor/index.ts"
 import { edit } from "./commands/edit.ts"
 import { checkPackages, retryFailed } from "./commands/packages.ts"
+import { fish } from "./commands/fish.ts"
+import { rust } from "./commands/rust.ts"
 import { skills } from "./commands/skills.ts"
+import { ssh } from "./commands/ssh.ts"
+import { viteplus } from "./commands/viteplus.ts"
 import { stow } from "./commands/stow.ts"
 import { runLegacy } from "./legacy.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
@@ -53,29 +58,29 @@ const COMMANDS: Command[] = [
   {
     name: "ssh",
     description: "Maintain ~/.ssh/config (1Password agent + legacy compat)",
-    run: (args) => runLegacy("ssh", args),
+    run: () => ssh(),
   },
   {
     name: "bun",
     description: "Install JS globals from packages/bun-global.txt",
-    run: (args) => runLegacy("bun", args),
+    run: () => bunGlobals(),
   },
   {
     name: "viteplus",
     description: "Install Vite+ (vp/vpr)",
     help: "Install Vite+ (vp/vpr) to ~/.vite-plus",
-    run: (args) => runLegacy("viteplus", args),
+    run: () => viteplus(),
   },
   {
     name: "rust",
     description: "Install rustup toolchains/targets from packages/rust.txt",
     help: "Install rustup + toolchains/targets from packages/rust.txt (+ ESP)",
-    run: (args) => runLegacy("rust", args),
+    run: () => rust(),
   },
   {
     name: "fish",
     description: "Make fish the default login shell + install fisher plugins",
-    run: (args) => runLegacy("fish", args),
+    run: () => fish(),
   },
   {
     name: "skills",
