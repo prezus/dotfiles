@@ -68,13 +68,42 @@ describe("planStow", () => {
     expect(plan.create).toHaveLength(0)
   })
 
-  it("flags a real file in the way as a conflict", async () => {
+  it("flags a real file with DIFFERENT content as a conflict", async () => {
     await writeFile(join(source, ".zshrc"), "x")
     await writeFile(join(target, ".zshrc"), "pre-existing user file")
 
     const plan = await planStow(source, target)
     expect(plan.conflicts).toHaveLength(1)
     expect(plan.conflicts[0]?.reason).toBe("real-file")
+    // Never reclaim something whose bytes we would be destroying.
+    expect(plan.reclaim).toHaveLength(0)
+  })
+
+  it("reclaims a real file whose content is already identical", async () => {
+    await writeFile(join(source, ".zshrc"), "same bytes")
+    await writeFile(join(target, ".zshrc"), "same bytes")
+
+    const plan = await planStow(source, target)
+    expect(plan.reclaim.map((a) => a.path)).toEqual([".zshrc"])
+    expect(plan.conflicts).toHaveLength(0)
+  })
+
+  it("never reclaims a directory, even an empty one", async () => {
+    // Removing a directory could take unrelated content with it.
+    await writeFile(join(source, "thing"), "x")
+    await mkdir(join(target, "thing"))
+
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(0)
+    expect(plan.conflicts[0]?.reason).toBe("real-dir")
+  })
+
+  it("distinguishes same-size-different-bytes from identical", async () => {
+    await writeFile(join(source, "f"), "aaaa")
+    await writeFile(join(target, "f"), "bbbb") // same length, different content
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(0)
+    expect(plan.conflicts).toHaveLength(1)
   })
 
   it("flags a RELATIVE symlink pointing outside the repo as a foreign link", async () => {
@@ -102,10 +131,10 @@ describe("planStow", () => {
     expect(plan.conflicts[0]?.current).toBe(foreign)
   })
 
-  it("flags an ABSOLUTE link as a conflict even when it points at the right file", async () => {
-    // Regression. The planner originally called this "already correct", but
-    // GNU Stow only claims ownership of RELATIVE links into the package.
-    // Confirmed with `stow -n` against the real machine:
+  it("does not call an ABSOLUTE link 'already correct'", async () => {
+    // Regression. The planner originally accepted this, but GNU Stow only
+    // claims ownership of RELATIVE links into the package. Confirmed with
+    // `stow -n` on the real machine:
     //   ~/.zshenv -> /Users/arkan/Projects/dotfiles/home/.zshenv
     // is the correct target and stow still reports
     //   "existing target is not owned by stow: .zshenv"
@@ -114,7 +143,25 @@ describe("planStow", () => {
 
     const plan = await planStow(source, target)
     expect(plan.ok).toHaveLength(0)
-    expect(plan.conflicts).toHaveLength(1)
+  })
+
+  it("reclaims an absolute link whose content already matches", async () => {
+    await writeFile(join(source, ".zshenv"), "x")
+    await symlink(join(source, ".zshenv"), join(target, ".zshenv"))
+
+    const plan = await planStow(source, target)
+    expect(plan.reclaim.map((a) => a.path)).toEqual([".zshenv"])
+    expect(plan.conflicts).toHaveLength(0)
+  })
+
+  it("still conflicts on an absolute link whose content DIFFERS", async () => {
+    const foreign = join(root, "someone-elses.fish")
+    await writeFile(foreign, "different bytes entirely")
+    await writeFile(join(source, "docker.fish"), "ours")
+    await symlink(foreign, join(target, "docker.fish"))
+
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(0)
     expect(plan.conflicts[0]?.reason).toBe("absolute-link")
   })
 

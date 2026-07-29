@@ -34,6 +34,24 @@ export const OP_AGENT_SOCK = join(
 /** Tools fish ships no completions for. Each must support `<tool> completion fish`. */
 export const FISH_TOOL_COMPLETIONS = ["docker", "kubectl", "orb", "orbctl"] as const
 
+/**
+ * Where this repo is allowed to look for broken symlinks — and, by extension,
+ * the only places it may offer to remove one.
+ *
+ * The bash scanned all of `$HOME` to depth 3, which reaches into ~/Projects and
+ * every source repo under it. That surfaced (and would have offered to DELETE)
+ * a git-tracked symlink in an unrelated project. A dotfiles CLI has no business
+ * mutating anything it does not manage, so the scan is scoped to what stow
+ * actually links into.
+ */
+export const MANAGED_ROOTS = [
+  join(HOME, ".config"),
+  join(HOME, ".local"),
+  join(HOME, ".agents"),
+  join(HOME, ".claude"),
+  join(HOME, ".pi"),
+] as const
+
 export const SCRIPT_NAME = "dotfiles"
 // Single source of truth — package.json, so `--version` can't drift from it.
 export { version as VERSION } from "../../package.json" with { type: "json" }

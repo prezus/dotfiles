@@ -18,6 +18,7 @@ import {
   FISH_TOOL_COMPLETIONS,
   HOME,
   HOME_DIR,
+  MANAGED_ROOTS,
   OP_AGENT_SOCK,
   PACKAGES_DIR,
   SKILLS_REPO,
@@ -573,8 +574,8 @@ const brokenSymlinksCheck: Check = {
   section: "Environment",
   label: "broken symlinks",
   run: async () => {
-    const broken = await findBrokenSymlinks(HOME, 3)
-    if (broken.length === 0) return { status: "ok", message: "no broken symlinks (~ depth 3)" }
+    const broken = (await Promise.all(MANAGED_ROOTS.map((root) => findBrokenSymlinks(root, 4)))).flat().sort()
+    if (broken.length === 0) return { status: "ok", message: "no broken symlinks (managed paths)" }
     return {
       status: "warn",
       message: `${broken.length} broken symlink(s):`,

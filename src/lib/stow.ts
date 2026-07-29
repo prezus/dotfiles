@@ -24,6 +24,15 @@ export type StowAction =
   | { kind: "create"; path: string; link: string; target: string; folds: boolean }
   /** A stow-owned link pointing at the wrong place; `stow -R` fixes it. */
   | { kind: "relink"; path: string; link: string; target: string; current: string }
+  /**
+   * Something we don't own is in the way, but its CONTENT is byte-identical to
+   * the file we would link. Removing it loses nothing, so stow can take
+   * ownership. This is how the tool stops fighting other providers: OrbStack
+   * installs its own absolute links for docker/kubectl/orbctl completions, and
+   * `<tool> completion fish` asks OrbStack's own binary — so the bytes match by
+   * construction, and reclaiming is a no-op except for who owns the link.
+   */
+  | { kind: "reclaim"; path: string; link: string; target: string; current?: string }
   /** Something we don't own is in the way. This is what makes stow fail. */
   | {
       kind: "conflict"
@@ -41,7 +50,23 @@ export type StowPlan = {
   ok: OfKind<"ok">[]
   create: OfKind<"create">[]
   relink: OfKind<"relink">[]
+  reclaim: OfKind<"reclaim">[]
   conflicts: OfKind<"conflict">[]
+}
+
+/** Byte-for-byte comparison. Only called for the handful of blocked paths. */
+async function sameContent(a: string, b: string): Promise<boolean> {
+  try {
+    const [fa, fb] = [Bun.file(a), Bun.file(b)]
+    if (fa.size !== fb.size) return false
+    const [ba, bb] = await Promise.all([fa.arrayBuffer(), fb.arrayBuffer()])
+    const va = new Uint8Array(ba)
+    const vb = new Uint8Array(bb)
+    for (let i = 0; i < va.length; i++) if (va[i] !== vb[i]) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function lstatSafe(path: string) {
@@ -88,7 +113,14 @@ export async function planStow(
       // `stow -n`: ~/.zshenv -> /Users/arkan/Projects/dotfiles/home/.zshenv is
       // the correct target yet still conflicts.
       if (isAbsolute(current)) {
-        actions.push({ kind: "conflict", path: rel, link, target, reason: "absolute-link", current })
+        // Even pointing at the right file, an absolute link is not stow's. If
+        // the bytes match ours it is reclaimable rather than a real conflict.
+        const kind = (await sameContent(link, src)) ? "reclaim" : "conflict"
+        actions.push(
+          kind === "reclaim"
+            ? { kind: "reclaim", path: rel, link, target, current }
+            : { kind: "conflict", path: rel, link, target, reason: "absolute-link", current },
+        )
         return
       }
 
@@ -97,6 +129,8 @@ export async function planStow(
       } else if (resolved.startsWith(sourceDir)) {
         // Ours, but stale — points elsewhere inside the package.
         actions.push({ kind: "relink", path: rel, link, target, current })
+      } else if (await sameContent(link, src)) {
+        actions.push({ kind: "reclaim", path: rel, link, target, current })
       } else {
         actions.push({ kind: "conflict", path: rel, link, target, reason: "foreign-link", current })
       }
@@ -107,6 +141,13 @@ export async function planStow(
       // Target dir already exists, so stow unfolds: descend and link leaves.
       const children = await readdir(src)
       for (const child of children.sort()) await visit(join(rel, child))
+      return
+    }
+
+    // A real FILE whose bytes already match ours is reclaimable; a directory
+    // never is, because removing it could take unrelated content with it.
+    if (!stats.isDirectory() && (await sameContent(link, src))) {
+      actions.push({ kind: "reclaim", path: rel, link, target })
       return
     }
 
@@ -126,6 +167,7 @@ export async function planStow(
     ok: actions.filter((a): a is OfKind<"ok"> => a.kind === "ok"),
     create: actions.filter((a): a is OfKind<"create"> => a.kind === "create"),
     relink: actions.filter((a): a is OfKind<"relink"> => a.kind === "relink"),
+    reclaim: actions.filter((a): a is OfKind<"reclaim"> => a.kind === "reclaim"),
     conflicts: actions.filter((a): a is OfKind<"conflict"> => a.kind === "conflict"),
   }
 }
