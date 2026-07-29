@@ -178,15 +178,37 @@ _stow_dotfiles() {
 _install_viteplus() {
     if [[ -x "$HOME/.vite-plus/bin/vp" ]]; then
         print_success "Vite+ already installed ($("$HOME/.vite-plus/bin/vp" --version 2>/dev/null | head -1))"
+    else
+        print_info "Installing Vite+ (curl https://vite.plus | bash)..."
+        # VP_NODE_MANAGER=yes → Vite+ manages Node versions (non-interactive). Vite+ OWNS its
+        # shell integration: it writes conf.d/vite-plus.fish (source env.fish → node shims)
+        # and appends to .zshrc/.profile. That fish file is gitignored as machine-generated.
+        VP_NODE_MANAGER=yes curl -fsSL https://vite.plus | bash \
+            || { print_warning "Vite+ install failed"; return 1; }
+        print_success "Vite+ installed"
+    fi
+    _viteplus_default_node
+}
+
+# Out of the box Vite+ serves the latest LTS; we want the latest release. That choice
+# lives in the machine-local ~/.vite-plus/config.json, which is NOT stowed — so set it
+# here to keep a fresh `dotfiles init` reproducible. `latest` is a moving alias: it
+# re-resolves on each install rather than freezing a version. Per-project overrides
+# still win (`vp env pin <v>` → a standard .node-version file).
+_viteplus_default_node() {
+    local vp="$HOME/.vite-plus/bin/vp" cur def
+    [[ -x "$vp" ]] || return 0
+    # Capture in full before matching — piping vp into an early-exiting reader
+    # (grep -q, awk exit, head) SIGPIPEs it into an "Abort trap: 6".
+    cur="$("$vp" env current 2>/dev/null || true)"
+    cur="$(awk '/Version/{print $2}' <<<"$cur")"
+    def="$("$vp" env default 2>/dev/null || true)"
+    if [[ "$def" == *"version: latest"* ]]; then
+        print_success "Vite+ Node default — latest (${cur:-?})"
         return 0
     fi
-    print_info "Installing Vite+ (curl https://vite.plus | bash)..."
-    # VP_NODE_MANAGER=yes → Vite+ manages Node versions (non-interactive). Vite+ OWNS its
-    # shell integration: it writes conf.d/vite-plus.fish (source env.fish → node shims)
-    # and appends to .zshrc/.profile. That fish file is gitignored as machine-generated.
-    VP_NODE_MANAGER=yes curl -fsSL https://vite.plus | bash \
-        || { print_warning "Vite+ install failed"; return 1; }
-    print_success "Vite+ installed"
+    print_info "Setting Vite+ default Node to latest..."
+    "$vp" env default latest || print_warning "could not set Vite+ default Node version"
 }
 
 # Install global JS CLIs that have no Homebrew formula (listed in
@@ -322,6 +344,67 @@ _update_extras() {
     print_success "extras updated"
 }
 
+# Normalize a Brewfile to comparable directive lines: keep the tracked directives and drop
+# trailing options (`, trusted: true`, `, link: false`) so flag churn isn't reported as drift.
+# `vscode` is included deliberately even though it must never be committed — filtering it
+# here would move that policy out of packages/bundle.ignore, where all exclusions belong.
+_bundle_norm() { grep -E '^(brew|cask|tap|go|cargo|vscode) ' "$1" 2>/dev/null | sed 's/,.*//' | sort -u; }
+
+# Reverse drift. `brew bundle check` walks the Brewfile asking "is each entry installed?" —
+# it never enumerates the system, so a package installed ad hoc and never added to
+# packages/bundle is invisible to it. That's the silent direction: it works fine here for
+# months and is simply absent on the next machine. Diff a throwaway dump against the bundle
+# to catch it. Intentional exclusions live in packages/bundle.ignore.
+_check_untracked_packages() {
+    command_exists brew || return 0
+    [[ -f "${PACKAGES_DIR}/bundle" ]] || return 0
+    local tmp; tmp="$(mktemp -t bundle.dump)" || return 0
+    # NOTE: dumps to a TEMP file — never to packages/bundle, which carries hand edits.
+    if ! brew bundle dump --file="$tmp" --force >/dev/null 2>&1; then
+        print_warning "untracked packages — could not dump brew state"; rm -f "$tmp"; return 0
+    fi
+    local ignore="${PACKAGES_DIR}/bundle.ignore" untracked=() line pat skip
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        skip=0
+        if [[ -f "$ignore" ]]; then
+            while IFS= read -r pat; do
+                [[ -z "$pat" || "$pat" == \#* ]] && continue
+                # Unquoted RHS is deliberate — it makes this a glob match, not a literal one.
+                # shellcheck disable=SC2053
+                [[ "$line" == $pat ]] && { skip=1; break; }
+            done < "$ignore"
+        fi
+        [[ $skip -eq 1 ]] || untracked+=("$line")
+    done < <(comm -23 <(_bundle_norm "$tmp") <(_bundle_norm "${PACKAGES_DIR}/bundle"))
+    rm -f "$tmp"
+    if [[ ${#untracked[@]} -eq 0 ]]; then
+        print_success "packages/bundle — no untracked installs"
+    else
+        print_warning "${#untracked[@]} installed package(s) missing from packages/bundle:"
+        printf '    %s\n' "${untracked[@]}"
+    fi
+}
+
+# Node is owned by Vite+ (see AGENTS.md → KEY DECISIONS). brew still keeps a `node`
+# around as a transitive dep of node-based CLIs (opencode, pi-coding-agent, mongosh,
+# prettier, typescript, …) and it can't be uninstalled while those exist — so PATH
+# order alone decides which node runs, and the two can differ by a MAJOR version.
+# Report what PATH actually resolves, and flag it when the shim isn't winning.
+_check_node() {
+    local shim="$HOME/.vite-plus/bin/node" actual
+    if ! command_exists node; then print_warning "node — missing"; return 0; fi
+    actual="$(command -v node)"
+    print_success "node — $(node --version) · npm $(npm --version 2>/dev/null) ($actual)"
+    if [[ -x "$shim" && "$actual" != "$shim" ]]; then
+        local want
+        want="$("$HOME/.vite-plus/bin/vp" env current 2>/dev/null || true)"
+        want="$(awk '/Version/{print $2}' <<<"$want")"
+        print_warning "  ↳ NOT the Vite+ shim — expected v${want:-?} from $shim"
+        print_warning "     \$HOME/.vite-plus/bin is outranked in PATH by $(dirname "$actual")"
+    fi
+}
+
 cmd_doctor() {
     print_header "Diagnostics"
     local issues=0
@@ -331,7 +414,7 @@ cmd_doctor() {
     if command_exists brew; then print_success "Homebrew — $(brew --version 2>/dev/null | head -1) ($(command -v brew))"; else print_error "Homebrew — missing"; ((++issues)); fi
     if command_exists stow; then print_success "GNU Stow — $(stow --version 2>/dev/null | grep -oE "$ver" | head -1)"; else print_error "GNU Stow — missing"; ((++issues)); fi
     if command_exists git;  then print_success "git — $(git --version | grep -oE "$ver" | head -1)"; else print_error "git — missing"; ((++issues)); fi
-    command_exists node   && print_success "node — $(node --version) · npm $(npm --version 2>/dev/null)"                                   || print_warning "node — missing"
+    _check_node
     command_exists bun    && print_success "bun — v$(bun --version) · $(bun pm ls -g 2>/dev/null | grep -c '── ') global(s)"               || print_warning "bun — missing"
     command_exists rustup && print_success "rustup — rustc $(rustc --version 2>/dev/null | grep -oE "$ver" | head -1) · $(rustup toolchain list 2>/dev/null | wc -l | tr -d ' ') toolchain(s)" || print_warning "rustup — not installed (dotfiles rust)"
     command_exists go     && print_success "go — $(go version 2>/dev/null | grep -oE 'go[0-9.]+')"                                          || print_warning "go — missing"
@@ -386,6 +469,9 @@ cmd_doctor() {
         print_success "git signing — ssh · commit.gpgsign=$(git config --get commit.gpgsign 2>/dev/null || echo unset)"
         print_info "signing key: $(git config --get user.signingkey | cut -c1-40)…"
     else print_warning "git signing — not configured (needs gpg.format=ssh + user.signingkey)"; fi
+
+    echo -e "\n${BOLD}Packages${RESET}"
+    _check_untracked_packages
 
     echo -e "\n${BOLD}Environment${RESET}"
     echo "$PATH" | tr ':' '\n' | grep -qx "$DOTFILES_DIR" \

@@ -24,6 +24,8 @@ dotfiles/
 │       ├── git/ ghostty/ ripgrep/ opencode/ gh/
 ├── packages/
 │   ├── bundle                # Brewfile (brew/cask/tap/go/cargo) — primary package source
+│   ├── bundle.ignore         # installed-but-intentionally-untracked (drift-check excludes)
+│   ├── rust.txt              # rustup toolchains/components/targets (`dotfiles rust`)
 │   └── bun-global.txt        # JS-only global CLIs with no brew formula
 ├── AGENTS.md README.md INSTALL.md   # this file + human docs + dotfiles spec
 └── .gitignore
@@ -35,7 +37,8 @@ dotfiles/
 |------|--------------------|
 | Add a CLI tool (has brew formula) | add `brew "x"` / `cask "x"` to `packages/bundle` |
 | Add a JS global with **no** brew formula | add to `packages/bun-global.txt` (installed by `dotfiles bun`) |
-| VS Code extension | **don't** — it's VS Code Settings Sync (sign in) |
+| Silence a package in the drift check | add a glob to `packages/bundle.ignore` — only for things that must NEVER be tracked |
+| VS Code extension | **never here** — it's VS Code Settings Sync (sign in) |
 | Shell alias / abbr (fish) | `home/.config/fish/conf.d/zz-aliases.fish` |
 | Shell env var / PATH (fish) | `home/.config/fish/conf.d/env.fish` / `paths.fish` |
 | Fish plugin | `home/.config/fish/fish_plugins` (fisher) |
@@ -65,7 +68,10 @@ dotfiles/
 ## ANTI-PATTERNS
 
 - Editing `~/.config/*` or `~/.zshrc` directly — changes are lost / diverge from the repo until stowed.
-- Adding a `vscode "…"` line to `packages/bundle` — extensions come from Settings Sync.
+- **NEVER commit a `vscode "…"` line to `packages/bundle`** — extensions come from VS Code
+  Settings Sync, always, no exceptions. `brew bundle dump` emits one line per installed
+  extension (currently ~25 on this machine), so **every** dump must be stripped before
+  it's committed — see NOTES for the command.
 - Committing skill files into this repo — they belong in `prezus/skills`.
 - Committing `~/.ssh/config`, keys, or secrets — SSH is `dotfiles ssh`-managed; keys are in 1Password.
 - Appending completions/inits to `config.fish` — use `conf.d/` (auto-sourced) or `completions/`.
@@ -90,7 +96,26 @@ dotfiles check-packages / retry-failed / edit
 
 - **Skills in a separate repo**, symlinked — one source of truth, works across all 5 agents (Claude Code/Codex/Cursor/OpenCode/Pi). See `prezus/skills/VENDORING.md`.
 - **brew vs bun split** — brew for anything with a formula (auto-completions); bun only for JS-only tools (`bun-global.txt`). npm globals are eliminated.
-- **Node.js is managed by Vite+** (`VP_NODE_MANAGER=yes`), not Homebrew. `vp env` provides `node/npm/npx/corepack` shims in `~/.vite-plus/bin` (per-project versions). `brew "node"` was removed; brew may still pull node as a transitive dep of node-based CLIs, but Vite+'s shims shadow it in PATH. **Vite+ owns its shell integration** — it writes `conf.d/vite-plus.fish` + blocks in `.zshrc`/`.profile`/`.zshenv`; because those are stowed, its writes land in the repo and are committed (don't hand-edit or strip them).
+- **Node.js is managed by Vite+** (`VP_NODE_MANAGER=yes`), not Homebrew. `vp env` provides
+  `node/npm/npx/corepack` shims in `~/.vite-plus/bin`. Default is **`latest`** (not Vite+'s
+  own default of latest-LTS) — set by `_viteplus_default_node` in the CLI, because that
+  choice lives in the machine-local `~/.vite-plus/config.json`, which is not stowed.
+  Per-project: `vp env pin <v>` writes a standard `.node-version` (portable to fnm/mise/nvm
+  if we ever migrate); `vp env use <v>` is session-only.
+  - **`brew "node"` is deliberately NOT in `packages/bundle`, but IS installed — and can't
+    be removed.** 12 formulae depend on it (`opencode`, `pi-coding-agent`, `mongosh`,
+    `prettier`, `typescript`, `tailwindcss`, `jupyterlab`, …) and `brew uninstall node`
+    refuses. Vite+'s shims can't satisfy them either: brew's node CLIs hardcode an absolute
+    shebang (`#!/opt/homebrew/opt/node/bin/node`) and never consult PATH. This is fine —
+    the two runtimes are isolated, so bumping Vite+'s Node can't break brew's CLIs. Strip
+    `brew "node"` from any fresh `brew bundle dump`, same as the `vscode "…"` lines.
+  - **PATH order is the whole ballgame.** Both nodes exist and can differ by a major
+    version; whichever lands first in PATH wins. `~/.vite-plus/bin` is pinned ahead of
+    `/opt/homebrew/bin` in `conf.d/paths.fish` — don't reorder it. `dotfiles doctor` prints
+    the resolved `node` path and warns when the shim is outranked.
+  - **Vite+ owns its shell integration** — it writes `conf.d/vite-plus.fish` + blocks in
+    `.zshrc`/`.profile`/`.zshenv`; because those are stowed, its writes land in the repo and
+    are committed (don't hand-edit or strip them).
 - **1Password SSH** — no keygen; `dotfiles ssh` binds `IdentityAgent`; git signs via `op-ssh-sign`.
 - **Two shells** — zsh is the current login shell; fish is being adopted (starship prompt shared, so both look identical). See `home/.config/fish/AGENTS.md`.
 - **Vite+ (`vp`/`vpr`)** installed via `dotfiles viteplus`; fish integration in `home/.config/fish/{conf.d/vite-plus.fish,completions/vp*.fish}`.
@@ -99,5 +124,22 @@ dotfiles check-packages / retry-failed / edit
 
 - `dotfiles` is ~370 lines (adapted from dmmulroy's, trimmed to this stack) — keep it thin; if it grows, split into `lib/` or a real language, and never reintroduce the delimited-string step registry.
 - **Adding a subcommand:** add it to the `case` dispatch **and** to `_print_commands()` (name<TAB>desc). The fish completion (`home/.config/fish/completions/dotfiles.fish`) reads `dotfiles __commands` dynamically, so it auto-updates from `_print_commands` — no separate completion edit needed.
-- `packages/bundle` is a `brew bundle dump` snapshot + a hand-added tail; re-dumping with `--force` overwrites hand edits, so review after.
+- `packages/bundle` is a `brew bundle dump` snapshot + a hand-added tail; re-dumping with
+  `--force` overwrites hand edits, so review after. **Always strip VS Code extensions from
+  a fresh dump** before committing:
+  ```sh
+  brew bundle dump --file=packages/bundle --force
+  gsed -i '/^vscode "/d' packages/bundle    # or: sed -i '' '/^vscode "/d' packages/bundle
+  ```
 - OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it.
+- **No `brew "fisher"`.** fisher self-installs as a fish *function* and is what actually
+  manages `fish_plugins`; a brew copy is redundant and can shadow it. `dotfiles doctor`
+  checks fisher via `fish -c 'type -q fisher'`, not via brew.
+- **Package drift has two directions**, and they're checked in two different places:
+  - *bundle → not installed*: `dotfiles check-packages` (a thin `brew bundle check`). It
+    walks the Brewfile and never enumerates the system, so it sees only this direction.
+  - *installed → not in bundle*: `dotfiles doctor` → **Packages**. This is the silent
+    direction — an ad-hoc `brew install` works fine here for months and is simply absent on
+    the next machine. `_check_untracked_packages` diffs a throwaway `brew bundle dump`
+    against the bundle (**to a temp file** — never over `packages/bundle`, which carries
+    hand edits). Intentional exclusions go in `packages/bundle.ignore`, one glob per line.

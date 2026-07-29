@@ -1,0 +1,26 @@
+# Packages that are installed on this machine but INTENTIONALLY absent from
+# packages/bundle. Read by `dotfiles doctor` (_check_untracked_packages), which
+# diffs a live `brew bundle dump` against the bundle to catch drift that
+# `brew bundle check` structurally cannot see — see AGENTS.md → NOTES.
+#
+# Format: one glob per line, matched against a normalized directive line
+# (trailing options like `, trusted: true` are stripped before matching):
+#
+#     brew "node"        exact
+#     vscode "*"         glob — every vscode line
+#
+# Anything listed here is silently skipped in the drift report, so add an entry
+# only when the package should NEVER be committed to the bundle. If you just
+# haven't gotten around to tracking something yet, leave it out and let the
+# warning nag you.
+
+# VS Code extensions come from VS Code Settings Sync, always. `brew bundle dump`
+# emits one line per installed extension (~25 here); none belong in the bundle.
+vscode "*"
+
+# Homebrew's node is a transitive dep of 12 node-based CLIs (opencode,
+# pi-coding-agent, mongosh, prettier, typescript, …) and brew refuses to
+# uninstall it. It gets marked installed-on-request, so every dump lists it.
+# Node for OUR projects is owned by Vite+ (~/.vite-plus/bin shims) — the two are
+# isolated because brew's CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`.
+brew "node"
