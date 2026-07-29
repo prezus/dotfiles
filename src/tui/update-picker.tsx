@@ -7,6 +7,7 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
 import { useState } from "react"
 import type { UpdateTask } from "../commands/update.ts"
+import { initialPickerState, reducePickerKey, type PickerState } from "./interaction.ts"
 import { setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 
@@ -35,34 +36,19 @@ function Picker({
   tasks: UpdateTask[]
   onDone: (chosen: Set<string> | null) => void
 }) {
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(tasks.filter((t) => t.default).map((t) => t.id)),
+  const ids = tasks.map((t) => t.id)
+  const [state, setState] = useState<PickerState>(() =>
+    initialPickerState(tasks.filter((t) => t.default).map((t) => t.id)),
   )
-  const [cursor, setCursor] = useState(0)
+  const { cursor, selected } = state
 
+  // All the behaviour lives in reducePickerKey, which is pure and unit-tested;
+  // this component only renders the result and performs the intent.
   useKeyboard((key) => {
-    if (key.name === "q" || key.name === "escape" || (key.ctrl && key.name === "c")) {
-      onDone(null)
-      return
-    }
-    if (key.name === "down" || key.name === "j") setCursor((i) => Math.min(i + 1, tasks.length - 1))
-    if (key.name === "up" || key.name === "k") setCursor((i) => Math.max(i - 1, 0))
-    if (key.name === "a") {
-      setSelected((prev) =>
-        prev.size === tasks.length ? new Set() : new Set(tasks.map((t) => t.id)),
-      )
-    }
-    if (key.name === "space") {
-      const task = tasks[cursor]
-      if (!task) return
-      setSelected((prev) => {
-        const next = new Set(prev)
-        if (next.has(task.id)) next.delete(task.id)
-        else next.add(task.id)
-        return next
-      })
-    }
-    if (key.name === "return") onDone(selected)
+    const { state: next, intent } = reducePickerKey(state, key, ids)
+    setState(next)
+    if (intent.kind === "cancel") onDone(null)
+    else if (intent.kind === "confirm") onDone(new Set(intent.selected))
   })
 
   return (

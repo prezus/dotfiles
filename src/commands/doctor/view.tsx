@@ -7,6 +7,7 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { BOLD, STATUS_COLOR, STATUS_GLYPH, theme } from "../../tui/theme.ts"
+import { initialDoctorNav, reduceDoctorKey } from "../../tui/interaction.ts"
 import { setRenderer } from "../../tui/renderer.ts"
 import {
   CHECKS,
@@ -44,8 +45,9 @@ function DoctorView({ onExit }: { onExit: (code: number) => void }) {
   const [rows, setRows] = useState<Row[]>(() =>
     CHECKS.map((c) => ({ pending: true, id: c.id, section: c.section, label: c.label })),
   )
-  const [cursor, setCursor] = useState(0)
-  const [collapsed, setCollapsed] = useState<Set<Section>>(new Set())
+  const [nav, setNav] = useState(initialDoctorNav)
+  const cursor = nav.cursor
+  const collapsed = nav.collapsed
   const [status, setStatus] = useState("running checks…")
   const [busy, setBusy] = useState(false)
 
@@ -111,29 +113,29 @@ function DoctorView({ onExit }: { onExit: (code: number) => void }) {
     [busy],
   )
 
+  // All the behaviour lives in reduceDoctorKey, which is pure and unit-tested;
+  // this component only renders the result and performs the intent.
   useKeyboard((key) => {
     if (busy) return
-    if (key.name === "q" || (key.ctrl && key.name === "c")) {
-      const done = rows.filter((r): r is CompletedCheck => !isPending(r))
-      onExit(countCriticalIssues(done) === 0 ? 0 : 1)
-      return
-    }
-    if (key.name === "down" || key.name === "j") setCursor((i) => Math.min(i + 1, visible.length - 1))
-    if (key.name === "up" || key.name === "k") setCursor((i) => Math.max(i - 1, 0))
-    if (key.name === "return") void applyFix(selected)
-    if (key.name === "r") {
-      setRows(CHECKS.map((c) => ({ pending: true, id: c.id, section: c.section, label: c.label })))
-      setStatus("re-running checks…")
-      runAll()
-    }
-    if (key.name === "space" && selected) {
-      const section = selected.section
-      setCollapsed((prev) => {
-        const next = new Set(prev)
-        if (next.has(section)) next.delete(section)
-        else next.add(section)
-        return next
-      })
+    const { nav: next, intent } = reduceDoctorKey(nav, key, visible)
+    setNav(next)
+
+    switch (intent.kind) {
+      case "quit": {
+        const done = rows.filter((r): r is CompletedCheck => !isPending(r))
+        onExit(countCriticalIssues(done) === 0 ? 0 : 1)
+        break
+      }
+      case "fix":
+        void applyFix(visible.find((r) => r.id === intent.id))
+        break
+      case "rerun":
+        setRows(CHECKS.map((c) => ({ pending: true, id: c.id, section: c.section, label: c.label })))
+        setStatus("re-running checks…")
+        runAll()
+        break
+      case "none":
+        break
     }
   })
 

@@ -150,10 +150,14 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun run test` (121 of them) and `bun run typecheck`. Run them yourself —
+- **Tests:** `bun run test` (147 of them) and `bun run typecheck`. Run them yourself —
   there is deliberately no CI; this is a single-user repo. Prefer pure
   functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
   step runner are all tested without touching the machine.
+- **Keyboard behaviour is a pure reducer** (`src/tui/interaction.ts`), not logic buried in a
+  component. Components render state and perform intents; they decide nothing. This is what
+  makes the interactive paths testable without a terminal — everything except drawing and
+  restoring cooked mode, both of which are OpenTUI's.
 - **Anything that owns the terminal** — `sudo`, `chsh`, `brew bundle`, third-party
   `curl | bash` installers — must be wrapped in `withSuspendedUI()`, or it deadlocks inside
   a raw-mode render.
