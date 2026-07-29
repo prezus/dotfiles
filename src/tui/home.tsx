@@ -12,12 +12,14 @@ import { createRoot, useKeyboard } from "@opentui/react"
 import { useCallback, useEffect, useState } from "react"
 import { DoctorView } from "../commands/doctor/view.tsx"
 import { countCriticalIssues, runChecks, type CompletedCheck } from "../commands/doctor/checks.ts"
+import { UPDATE_TASKS, update } from "../commands/update.ts"
 import { VERSION } from "../lib/env.ts"
+import { setLogSink, type LogLevel } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import { initialHomeState, reduceHomeKey } from "./interaction.ts"
-import { setRenderer } from "./renderer.ts"
-import { withSuspendedUI } from "./renderer.ts"
+import { setRenderer, withSuspendedUI } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
+import { Picker } from "./update-picker.tsx"
 
 export type HomeCommand = {
   name: string
@@ -59,9 +61,15 @@ function Home({
   const [summary, setSummary] = useState<Summary>({ checks: null, stow: null })
   const [status, setStatus] = useState("gathering status…")
   const [busy, setBusy] = useState(false)
-  // Doctor is itself a full-screen view, so it swaps in place rather than being
-  // launched as a child process — same renderer, no flicker.
-  const [showDoctor, setShowDoctor] = useState(false)
+
+  // Commands that are themselves full-screen swap in ON THIS RENDERER rather
+  // than standing up their own. Letting them create a second CliRenderer meant
+  // four alternate-screen transitions per invocation — suspend, new renderer
+  // enters, destroy, resume — which reads as a flash. Worse, the second
+  // renderer overwrote the global in setRenderer(), so afterwards
+  // withSuspendedUI pointed at a destroyed renderer.
+  const [view, setView] = useState<"home" | "doctor" | "update" | "output">("home")
+  const [logs, setLogs] = useState<{ level: LogLevel; message: string }[]>([])
 
   const names = commands.map((c) => c.name)
 
@@ -77,40 +85,95 @@ function Home({
 
   useEffect(refresh, [refresh])
 
-  const runCommand = useCallback(
-    async (name: string) => {
-      if (busy) return
-      if (name === "doctor") {
-        setShowDoctor(true)
-        return
-      }
-      const command = commands.find((c) => c.name === name)
-      if (!command) return
+  /**
+   * Commands that spawn a child owning the terminal. These genuinely cannot be
+   * rendered in a pane: they either need your keyboard (sudo, chsh, $EDITOR) or
+   * stream live progress from a tool we do not control (brew, rustup, the
+   * `curl | bash` installers). The screen handing over is the signal that
+   * something outside the app wants the terminal.
+   */
+  const HANDS_OVER_TERMINAL = new Set([
+    "init",
+    "stow",
+    "bun",
+    "rust",
+    "viteplus",
+    "fish",
+    "edit",
+    "retry-failed",
+  ])
 
+  /** Run a print*-only command and show its output in a pane, staying in the TUI. */
+  const runInPane = useCallback(
+    async (label: string, run: () => Promise<number>) => {
       setBusy(true)
-      setStatus(`running ${name}…`)
+      setLogs([])
+      setView("output")
+      setStatus(`running ${label}…`)
+      setLogSink((level, message) => setLogs((prev) => [...prev, { level, message }]))
       try {
-        // Hand the terminal over: these print line output, and some prompt.
-        const code = await withSuspendedUI(async () => {
-          const result = await command.run()
-          // Give the output a beat to be read before the panel repaints over it.
-          process.stdout.write("\n  ── press enter to return to dotfiles ──")
-          for await (const _ of Bun.stdin.stream()) break
-          return result
-        })
-        setStatus(`${name} exited ${code}`)
+        const code = await run()
+        setStatus(`${label} exited ${code}`)
       } catch (error) {
-        setStatus(`${name} failed: ${String(error)}`)
+        setStatus(`${label} failed: ${String(error)}`)
+      } finally {
+        setLogSink(null)
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  /** Hand the terminal over for a command that needs it, then take it back. */
+  const runInTerminal = useCallback(
+    async (label: string, run: () => Promise<number>) => {
+      setBusy(true)
+      setStatus(`running ${label}…`)
+      try {
+        // No "press enter to continue" here: OpenTUI owns stdin for its key
+        // handling, so a read of our own never receives anything and the app
+        // hangs. The command's own output stays on screen until it returns.
+        const code = await withSuspendedUI(run)
+        setStatus(`${label} exited ${code}`)
+      } catch (error) {
+        setStatus(`${label} failed: ${String(error)}`)
       } finally {
         setBusy(false)
         refresh()
       }
     },
-    [busy, commands, refresh],
+    [refresh],
+  )
+
+  const runCommand = useCallback(
+    async (name: string) => {
+      if (busy) return
+      // These two own the screen; render them here instead of spawning a renderer.
+      if (name === "doctor" || name === "update") {
+        setView(name)
+        return
+      }
+      const command = commands.find((c) => c.name === name)
+      if (!command) return
+      if (HANDS_OVER_TERMINAL.has(name)) await runInTerminal(name, () => command.run())
+      else await runInPane(name, () => command.run())
+    },
+    [busy, commands, runInTerminal, runInPane],
   )
 
   useKeyboard((key) => {
-    if (busy || showDoctor) return
+    // The output pane has its own tiny binding: anything dismisses it once the
+    // command has finished.
+    if (view === "output") {
+      if (!busy && (key.name === "q" || key.name === "escape" || key.name === "return")) {
+        setView("home")
+        refresh()
+      }
+      return
+    }
+    // While a sub-view is mounted it owns the keyboard; ours must stay quiet or
+    // both handlers fire on the same keypress.
+    if (busy || view !== "home") return
     const { state: next, intent } = reduceHomeKey(state, key, names)
     setState(next)
     if (intent.kind === "quit") onExit(0)
@@ -118,12 +181,79 @@ function Home({
     else if (intent.kind === "run") void runCommand(intent.command)
   })
 
-  if (showDoctor) {
+  if (view === "doctor") {
     return (
       <DoctorView
         onExit={() => {
-          setShowDoctor(false)
+          setView("home")
           refresh()
+        }}
+      />
+    )
+  }
+
+  if (view === "output") {
+    const tone: Record<LogLevel, string> = {
+      header: theme.blue,
+      ok: theme.green,
+      warn: theme.yellow,
+      error: theme.red,
+      info: theme.aqua,
+    }
+    const glyph: Record<LogLevel, string> = {
+      header: "▸",
+      ok: "✓",
+      warn: "⚠",
+      error: "✗",
+      info: "ℹ",
+    }
+    // Keep the tail visible rather than the head — the interesting part of a
+    // command's output is almost always the end.
+    const shown = logs.slice(-24)
+
+    return (
+      <box flexDirection="column" padding={1}>
+        <box flexDirection="row" justifyContent="space-between">
+          <text fg={theme.blue} attributes={BOLD}>
+            {status}
+          </text>
+          <text fg={theme.dim}>{logs.length > shown.length ? `+${logs.length - shown.length} above` : ""}</text>
+        </box>
+
+        <box flexDirection="column" marginTop={1}>
+          {shown.map((line, index) => (
+            <box key={index} flexDirection="row">
+              <text fg={tone[line.level]}>{` ${glyph[line.level]} `}</text>
+              <text fg={line.level === "header" ? theme.fg : theme.fgMuted}>{line.message}</text>
+            </box>
+          ))}
+        </box>
+
+        <box marginTop={1} flexDirection="column">
+          <text fg={theme.dim}>{"─".repeat(62)}</text>
+          <text fg={theme.bgHard}>{busy ? "running…" : "⏎ / q — back to dotfiles"}</text>
+        </box>
+      </box>
+    )
+  }
+
+  if (view === "update") {
+    return (
+      <Picker
+        tasks={UPDATE_TASKS}
+        onDone={(picked) => {
+          setView("home")
+          if (picked === null) {
+            setStatus("update cancelled")
+            return
+          }
+          if (picked.size === 0) {
+            setStatus("nothing selected")
+            return
+          }
+          // The selection is already made, so pass it through explicitly —
+          // update() must not open a picker of its own.
+          void runInTerminal("update", () => update([`--only=${[...picked].join(",")}`]))
         }}
       />
     )

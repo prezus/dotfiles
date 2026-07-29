@@ -24,12 +24,39 @@ export const CYAN = sgr("0;36")
 export const RESET = sgr("0")
 export const BOLD = sgr("1")
 
+export type LogLevel = "header" | "ok" | "warn" | "error" | "info"
+
+/**
+ * Where print* output goes. Normally stdout; the TUI swaps in a sink so command
+ * output can be rendered inside a pane instead of the CLI having to drop out of
+ * the full-screen view to print a few lines.
+ *
+ * This is the same seam as checks-as-data: the commands emit values, and the
+ * caller decides how they are shown. All 166 print* call sites are unaffected.
+ */
+export type LogSink = (level: LogLevel, message: string) => void
+
+let sink: LogSink | null = null
+
+export const setLogSink = (next: LogSink | null): void => {
+  sink = next
+}
+
+const emit = (level: LogLevel, message: string, formatted: string): void => {
+  if (sink) {
+    sink(level, message)
+    return
+  }
+  if (level === "error") console.error(formatted)
+  else console.log(formatted)
+}
+
 export const printHeader = (msg: string): void =>
-  console.log(`\n${BOLD}${BLUE}==>${RESET} ${BOLD}${msg}${RESET}`)
-export const printSuccess = (msg: string): void => console.log(`${GREEN}✓${RESET} ${msg}`)
-export const printError = (msg: string): void => console.error(`${RED}✗${RESET} ${msg}`)
-export const printWarning = (msg: string): void => console.log(`${YELLOW}⚠${RESET} ${msg}`)
-export const printInfo = (msg: string): void => console.log(`${CYAN}ℹ${RESET} ${msg}`)
+  emit("header", msg, `\n${BOLD}${BLUE}==>${RESET} ${BOLD}${msg}${RESET}`)
+export const printSuccess = (msg: string): void => emit("ok", msg, `${GREEN}✓${RESET} ${msg}`)
+export const printError = (msg: string): void => emit("error", msg, `${RED}✗${RESET} ${msg}`)
+export const printWarning = (msg: string): void => emit("warn", msg, `${YELLOW}⚠${RESET} ${msg}`)
+export const printInfo = (msg: string): void => emit("info", msg, `${CYAN}ℹ${RESET} ${msg}`)
 
 /**
  * Yes/no prompt — the port of bash `confirm()`. Non-interactive callers get the

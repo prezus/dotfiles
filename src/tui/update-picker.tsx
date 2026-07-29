@@ -29,7 +29,9 @@ export async function pickUpdateTasks(tasks: UpdateTask[]): Promise<Set<string> 
   })
 }
 
-function Picker({
+/** Exported so a host view (the dashboard) can swap it in on its OWN renderer
+ *  rather than standing up a second one. See runHomeTui. */
+export function Picker({
   tasks,
   onDone,
 }: {
