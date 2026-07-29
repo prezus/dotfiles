@@ -1,0 +1,36 @@
+name: CI
+
+# The repo had no tests and no CI before the TypeScript rewrite; `dotfiles
+# doctor` was the only quality signal, and it inspects the live machine rather
+# than the code.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    # ubuntu, not macOS: these are unit tests over pure logic plus temp-dir
+    # filesystem work, none of which needs Homebrew or fish. The checks that DO
+    # touch real tooling degrade to warn/fail rather than throwing, which the
+    # runChecks integration test asserts.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Test
+        run: bun test
+
+      - name: Shim stays bash 3.2 compatible
+        # macOS ships bash 3.2 and the first steps of a fresh `init` run under
+        # it, before Homebrew's bash exists. `-n` parses without executing.
+        run: bash -n dotfiles

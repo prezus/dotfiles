@@ -11,7 +11,8 @@ only **deploys** them.
 ## Structure
 
 ```
-dotfiles              # CLI: init / update / doctor / skills / stow   (bash)
+dotfiles              # bash shim — ensures bun exists, then runs src/cli.ts
+src/                  # the CLI (TypeScript): init / update / doctor / skills / stow
 home/                 # stowed into $HOME via `stow -t "$HOME" home`
   .config/<tool>/     # per-tool config (fish, git, nvim, …)
   .local/bin/         # personal scripts, on PATH

@@ -12,7 +12,12 @@ macOS dev environment via GNU Stow + a `dotfiles` CLI. Shell: zsh (current) → 
 
 ```
 dotfiles/
-├── dotfiles                       # CLI (bash): init/update/doctor/stow/ssh/bun/viteplus/skills/...
+├── dotfiles                  # bash SHIM (~45 lines): ensures bun + node_modules, execs src/cli.ts
+├── src/                      # the CLI (TypeScript, run by bun)
+│   ├── cli.ts                #   COMMANDS table — single source of truth for help + completions
+│   ├── commands/             #   one module per subcommand; doctor/ has checks|fixes|view|plain
+│   ├── lib/                  #   env, exec (subprocess + PATH threading), fs, brew, stow, steps
+│   └── tui/                  #   the ONLY OpenTUI-aware code (renderer, theme, pickers)
 ├── home/                     # Stowed to $HOME  (stow -t ~ home)
 │   ├── .zshrc .zprofile .profile .gitconfig   # shell + git (top-level)
 │   └── .config/
@@ -81,16 +86,25 @@ dotfiles/
 ## COMMANDS (`dotfiles`)
 
 ```
-dotfiles init         Full setup: brew → packages → bun globals → Vite+ → stow → ssh → fish → skills
-dotfiles update       git pull → brew update/upgrade → re-stow → (skills sync)
-dotfiles doctor       Health check (brew, stow, fish, skills links, 1Password, git signing)
-dotfiles stow         Re-symlink home/ → $HOME
-dotfiles ssh          Write the 1Password-agent + legacy-compat block into ~/.ssh/config
-dotfiles bun          Install JS globals from packages/bun-global.txt
-dotfiles viteplus     Install Vite+ (vp/vpr) to ~/.vite-plus
-dotfiles skills       install | update | status   (from prezus/skills)
+dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills
+dotfiles update          Multi-select: repos / brew / language tools / re-stow / skills
+                         --all or --only=repos,brew for non-interactive runs
+dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
+                         warning in place); plain lines when piped or --plain.
+                         Exits 1 on a critical failure, so it works as a gate.
+dotfiles stow            Re-symlink home/ → $HOME. --dry-run previews, --adopt on an
+                         existing machine. Conflicts are named before stow is run.
+dotfiles ssh             Write the 1Password-agent + legacy-compat block into ~/.ssh/config
+dotfiles bun             Install JS globals from packages/bun-global.txt
+dotfiles viteplus        Install Vite+ (vp/vpr) to ~/.vite-plus
+dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
+dotfiles fish            Default login shell + fisher plugins + tool completions
+dotfiles skills          install | update | status | verify   (from prezus/skills)
 dotfiles check-packages / retry-failed / edit
 ```
+
+Every command honours `NO_COLOR`, `CI` and `--plain`, and emits no escape
+sequences when piped.
 
 ## KEY DECISIONS (context for changes)
 
@@ -122,8 +136,28 @@ dotfiles check-packages / retry-failed / edit
 
 ## NOTES
 
-- `dotfiles` is ~370 lines (adapted from dmmulroy's, trimmed to this stack) — keep it thin; if it grows, split into `lib/` or a real language, and never reintroduce the delimited-string step registry.
-- **Adding a subcommand:** add it to the `case` dispatch **and** to `_print_commands()` (name<TAB>desc). The fish completion (`home/.config/fish/completions/dotfiles.fish`) reads `dotfiles __commands` dynamically, so it auto-updates from `_print_commands` — no separate completion edit needed.
+- **The CLI is TypeScript, run by bun.** It was bash until it hit 631 lines against a
+  documented ~370-line budget, which is what this note used to warn about. `dotfiles` is now
+  a ~45-line bash shim whose only job is the bootstrap chicken/egg: `brew "oven-sh/bun/bun"`
+  is `packages/bundle`, installed at **init step 3**, so on a bare machine the CLI's own
+  runtime does not exist when it is first invoked. The shim installs bun (brew if present,
+  else `curl bun.sh`), ensures `node_modules`, and execs `src/cli.ts`.
+  **Keep the shim bash-3.2 compatible** — macOS ships 3.2 and init steps 1–3 run under it.
+- **Adding a subcommand:** add one entry to `COMMANDS` in `src/cli.ts`. That is the single
+  source of truth for `help`, for the hidden `__commands`, and therefore for the fish
+  completion, which calls `dotfiles __commands` on every tab. There is no second list.
+- **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
+  pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
+  so a breaking bump touches one directory.
+- **Tests:** `bun test` (109 of them) and `bunx tsc --noEmit`, both run by CI. Prefer pure
+  functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
+  step runner are all tested without touching the machine.
+- **Anything that owns the terminal** — `sudo`, `chsh`, `brew bundle`, third-party
+  `curl | bash` installers — must be wrapped in `withSuspendedUI()`, or it deadlocks inside
+  a raw-mode render.
+- **`run()` vs `probe()`:** `probe()` for version checks and feature detection, where a
+  missing binary is an expected answer (it yields exit 127). `run()` returns a `Result` and
+  reserves `Err` for the process failing to start; a non-zero exit is ordinary data.
 - `packages/bundle` is a `brew bundle dump` snapshot + a hand-added tail; re-dumping with
   `--force` overwrites hand edits, so review after. **Always strip VS Code extensions from
   a fresh dump** before committing:

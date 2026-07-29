@@ -35,4 +35,5 @@ export const OP_AGENT_SOCK = join(
 export const FISH_TOOL_COMPLETIONS = ["docker", "kubectl", "orb", "orbctl"] as const
 
 export const SCRIPT_NAME = "dotfiles"
-export const VERSION = "1.0.0"
+// Single source of truth — package.json, so `--version` can't drift from it.
+export { version as VERSION } from "../../package.json" with { type: "json" }
