@@ -179,6 +179,10 @@ sequences when piped.
   brew bundle dump --file=packages/bundle --force
   gsed -i '/^vscode "/d' packages/bundle    # or: sed -i '' '/^vscode "/d' packages/bundle
   ```
+- **This CLI was adapted from dmmulroy's `dot`.** A few things came across that were
+  never ours — a Cloudflare WARP workaround for a product not installed here was carried
+  for months and is now removed. If something looks like it solves a problem you have never
+  had, check `git log -S` for when it appeared before assuming it earns its place.
 - OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it. Stow
   no longer needs to: a path that blocks stow but whose bytes already match ours is
   **reclaimed** (the link is taken over, content unchanged). Our completions come from

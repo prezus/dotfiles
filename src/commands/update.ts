@@ -2,7 +2,6 @@
 //
 // Bash gated the work behind four sequential y/N prompts. Here the same choices
 // are one selection, made once, before anything runs.
-import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { readBundle } from "../lib/brew.ts"
 import { DOTFILES_DIR, HOME, SKILLS_REPO } from "../lib/env.ts"
@@ -34,24 +33,6 @@ export const UPDATE_TASKS: UpdateTask[] = [
   { id: "stow", title: "Re-stow", description: "re-symlink home/ → $HOME", default: true },
   { id: "skills", title: "Vendored skills", description: "re-sync from upstream", default: false },
 ]
-
-/**
- * Homebrew's curl has a speed limit that WARP/VPN latency trips. Pre-warming
- * the API cache sidesteps it. Carried over from the bash verbatim — it is the
- * kind of workaround that looks like cruft until the day it isn't.
- */
-async function prewarmBrewApiCache(): Promise<void> {
-  const warp = await probe(["pgrep", "-q", "Cloudflare WARP"])
-  if (!warp.ok) return
-
-  const cache = join(HOME, "Library", "Caches", "Homebrew", "api")
-  await mkdir(cache, { recursive: true })
-  printInfo("Cloudflare WARP detected — pre-warming the Homebrew API cache")
-  await Promise.all([
-    probe(["curl", "-fsSL", "-o", join(cache, "formula.jws.json"), "https://formulae.brew.sh/api/formula.jws.json"]),
-    probe(["curl", "-fsSL", "-o", join(cache, "cask.jws.json"), "https://formulae.brew.sh/api/cask.jws.json"]),
-  ])
-}
 
 /** Package sources `brew upgrade` does not touch. */
 async function updateExtras(): Promise<void> {
@@ -176,7 +157,6 @@ export async function update(argv: string[] = []): Promise<number> {
       id: "brew",
       title: "Homebrew packages",
       run: async () => {
-        await prewarmBrewApiCache()
         const updated = await runInteractiveCode(["brew", "update"])
         const upgraded = await runInteractiveCode(["brew", "upgrade"])
         return { ok: updated === 0 && upgraded === 0 }
