@@ -1,7 +1,8 @@
 {
-  "lastChangelogVersion": "0.80.1",
+  "lastChangelogVersion": "0.80.6",
   "theme": "catppuccin-macchiato",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.5",
-  "defaultThinkingLevel": "medium"
+  "defaultThinkingLevel": "medium",
+  "quietStartup": false
 }
