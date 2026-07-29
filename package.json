@@ -1,0 +1,21 @@
+{
+  "name": "dotfiles-cli",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "macOS dev environment CLI — brew, stow, fish, skills",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@opentui/core": "0.4.5",
+    "@opentui/react": "0.4.5",
+    "react": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "@types/react": "19.2.17",
+    "typescript": "7.0.2"
+  }
+}
