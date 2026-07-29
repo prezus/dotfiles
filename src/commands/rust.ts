@@ -6,7 +6,7 @@
 // entries — which is why activating cargo on PATH here matters.
 import { join } from "node:path"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, env, run, runInteractive } from "../lib/exec.ts"
+import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
 import { parseRustList } from "../lib/lists.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
@@ -31,7 +31,7 @@ export async function installRustup(): Promise<boolean> {
   } else {
     printInfo("Installing rustup...")
     const code = await withSuspendedUI(() =>
-      runInteractive([
+      runInteractiveCode([
         "/bin/bash",
         "-c",
         "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path",
@@ -58,17 +58,17 @@ export async function applyRustList(): Promise<void> {
     switch (entry.kind) {
       case "toolchain": {
         // --no-self-update: rustup's own updates are handled by `dotfiles update`.
-        const res = await run(["rustup", "toolchain", "install", entry.value, "--no-self-update"])
+        const res = await probe(["rustup", "toolchain", "install", entry.value, "--no-self-update"])
         if (res.ok) printSuccess(`toolchain: ${entry.value}`)
         break
       }
       case "component": {
-        const res = await run(["rustup", "component", "add", entry.value])
+        const res = await probe(["rustup", "component", "add", entry.value])
         if (res.ok) printSuccess(`component: ${entry.value}`)
         break
       }
       case "target": {
-        const res = await run(["rustup", "target", "add", entry.value])
+        const res = await probe(["rustup", "target", "add", entry.value])
         if (res.ok) printSuccess(`target: ${entry.value}`)
         break
       }
@@ -93,14 +93,14 @@ export async function installRustEsp(): Promise<void> {
     return
   }
 
-  const toolchains = await run(["rustup", "toolchain", "list"])
+  const toolchains = await probe(["rustup", "toolchain", "list"])
   if (toolchains.stdout.split("\n").some((l) => l.startsWith("esp"))) {
     printSuccess("ESP (Xtensa) toolchain already installed")
     return
   }
 
   printInfo("Installing ESP (Xtensa) toolchain via espup...")
-  const code = await withSuspendedUI(() => runInteractive(["espup", "install"]))
+  const code = await withSuspendedUI(() => runInteractiveCode(["espup", "install"]))
   if (code === 0) printSuccess("ESP toolchain installed")
   else printWarning("espup install failed")
 }

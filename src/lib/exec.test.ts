@@ -6,7 +6,8 @@
 // implementation fails ONLY on a machine that doesn't already have brew and
 // cargo on PATH — i.e. never on a dev machine, only on a fresh one.
 import { describe, expect, it } from "bun:test"
-import { Env, extract } from "./exec.ts"
+import { Result } from "better-result"
+import { Env, extract, probe, run, runInteractiveCode } from "./exec.ts"
 
 describe("Env.prepend", () => {
   it("puts the new entry first", () => {
@@ -142,6 +143,53 @@ describe("Env isolation", () => {
   it("drops undefined values rather than passing them to a child", () => {
     const env = new Env({ SET: "yes", UNSET: undefined })
     expect(env.toObject()).toEqual({ SET: "yes" })
+  })
+})
+
+describe("missing binaries are values, not exceptions", () => {
+  const MISSING = ["definitely-not-a-real-binary-xyz", "--version"]
+
+  it("run() returns Err instead of throwing", async () => {
+    // Before better-result this threw `Executable not found in $PATH`, despite
+    // the docstring promising it never threw. Call sites were only safe because
+    // they happened to guard with commandExists first.
+    const result = await run(MISSING)
+    expect(Result.isError(result)).toBe(true)
+    if (!Result.isError(result)) throw new Error("unreachable")
+    expect(result.error._tag).toBe("SpawnError")
+    expect(result.error.command).toContain("definitely-not-a-real-binary-xyz")
+  })
+
+  it("distinguishes 'could not start' from 'ran and failed'", async () => {
+    // A non-zero exit is data, not an error — this distinction is the whole
+    // point of the Result boundary being where it is.
+    const ranAndFailed = await run(["/bin/sh", "-c", "exit 3"])
+    expect(Result.isOk(ranAndFailed)).toBe(true)
+    if (!Result.isOk(ranAndFailed)) throw new Error("unreachable")
+    expect(ranAndFailed.value.code).toBe(3)
+    expect(ranAndFailed.value.ok).toBe(false)
+  })
+
+  it("probe() degrades to exit 127, the shell's command-not-found code", async () => {
+    const result = await probe(MISSING)
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe(127)
+    expect(result.stdout).toBe("")
+  })
+
+  it("probe() still returns real output for a command that exists", async () => {
+    const result = await probe(["/bin/echo", "hello"])
+    expect(result.ok).toBe(true)
+    expect(result.stdout.trim()).toBe("hello")
+  })
+
+  it("runInteractiveCode() yields 127 rather than throwing", async () => {
+    expect(await runInteractiveCode(MISSING)).toBe(127)
+  })
+
+  it("rejects an empty command instead of crashing on undefined", async () => {
+    const result = await run([])
+    expect(Result.isError(result)).toBe(true)
   })
 })
 

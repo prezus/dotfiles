@@ -11,6 +11,7 @@
 // IMPORTANT: this file must NOT import anything from @opentui or src/tui.
 // Keeping the data layer renderer-free is what lets a breaking OpenTUI bump
 // touch one directory instead of the whole command.
+import { Result } from "better-result"
 import { join, resolve } from "node:path"
 import {
   DOTFILES_DIR,
@@ -22,7 +23,7 @@ import {
   SKILLS_REPO,
   SKILLS_SRC,
 } from "../../lib/env.ts"
-import { commandExists, extract, run, which } from "../../lib/exec.ts"
+import { commandExists, extract, probe, which } from "../../lib/exec.ts"
 import {
   countFilesRecursive,
   countSubdirectories,
@@ -92,7 +93,7 @@ const NODE_SHIM = join(VITE_PLUS_BIN, "node")
 /** `vp env current` → the bare version. Captured in full: piping vp into an
  *  early-exiting reader SIGPIPEs it into an "Abort trap: 6" (see the original). */
 async function viteplusCurrentNode(): Promise<string | undefined> {
-  const res = await run([VP, "env", "current"])
+  const res = await probe([VP, "env", "current"])
   return extract(res.stdout, /Version\s+(\S+)/)
 }
 
@@ -106,7 +107,7 @@ const brewCheck: Check = {
   run: async () => {
     const path = await which("brew")
     if (!path) return { status: "fail", message: "Homebrew — missing" }
-    const version = firstLine((await run(["brew", "--version"])).stdout)
+    const version = firstLine((await probe(["brew", "--version"])).stdout)
     return { status: "ok", message: `Homebrew — ${version} (${path})` }
   },
 }
@@ -118,7 +119,7 @@ const stowCheck: Check = {
   critical: true,
   run: async () => {
     if (!(await commandExists("stow"))) return { status: "fail", message: "GNU Stow — missing" }
-    const version = firstVersion((await run(["stow", "--version"])).stdout)
+    const version = firstVersion((await probe(["stow", "--version"])).stdout)
     return { status: "ok", message: `GNU Stow — ${version}` }
   },
 }
@@ -130,7 +131,7 @@ const gitCheck: Check = {
   critical: true,
   run: async () => {
     if (!(await commandExists("git"))) return { status: "fail", message: "git — missing" }
-    const version = firstVersion((await run(["git", "--version"])).stdout)
+    const version = firstVersion((await probe(["git", "--version"])).stdout)
     return { status: "ok", message: `git — ${version}` }
   },
 }
@@ -150,8 +151,8 @@ const nodeCheck: Check = {
     if (!actual) return { status: "warn", message: "node — missing" }
 
     const [nodeV, npmV] = await Promise.all([
-      run(["node", "--version"]),
-      run(["npm", "--version"]),
+      probe(["node", "--version"]),
+      probe(["npm", "--version"]),
     ])
     const message = `node — ${nodeV.stdout.trim()} · npm ${npmV.stdout.trim()} (${actual})`
 
@@ -176,7 +177,7 @@ const bunCheck: Check = {
   label: "bun",
   run: async () => {
     if (!(await commandExists("bun"))) return { status: "warn", message: "bun — missing" }
-    const [version, globals] = await Promise.all([run(["bun", "--version"]), run(["bun", "pm", "ls", "-g"])])
+    const [version, globals] = await Promise.all([probe(["bun", "--version"]), probe(["bun", "pm", "ls", "-g"])])
     const count = globals.stdout.split("\n").filter((l) => l.includes("── ")).length
     return { status: "ok", message: `bun — v${version.stdout.trim()} · ${count} global(s)` }
   },
@@ -190,8 +191,8 @@ const rustupCheck: Check = {
     if (!(await commandExists("rustup")))
       return { status: "warn", message: "rustup — not installed (dotfiles rust)" }
     const [rustc, toolchains] = await Promise.all([
-      run(["rustc", "--version"]),
-      run(["rustup", "toolchain", "list"]),
+      probe(["rustc", "--version"]),
+      probe(["rustup", "toolchain", "list"]),
     ])
     const count = toolchains.stdout.split("\n").filter((l) => l.trim() !== "").length
     return {
@@ -207,7 +208,7 @@ const goCheck: Check = {
   label: "go",
   run: async () => {
     if (!(await commandExists("go"))) return { status: "warn", message: "go — missing" }
-    const version = extract((await run(["go", "version"])).stdout, /(go[0-9.]+)/)
+    const version = extract((await probe(["go", "version"])).stdout, /(go[0-9.]+)/)
     return { status: "ok", message: `go — ${version}` }
   },
 }
@@ -219,7 +220,7 @@ const viteplusCheck: Check = {
   run: async () => {
     if (!(await pathExists(VP)))
       return { status: "warn", message: "Vite+ — not installed (dotfiles viteplus)" }
-    const version = firstLine((await run([VP, "--version"])).stdout)
+    const version = firstLine((await probe([VP, "--version"])).stdout)
     return { status: "ok", message: `Vite+ — ${version}` }
   },
 }
@@ -234,7 +235,7 @@ const fishCheck: Check = {
   run: async () => {
     const path = await which("fish")
     if (!path) return { status: "fail", message: "fish — missing" }
-    const version = firstVersion((await run(["fish", "--version"])).stdout)
+    const version = firstVersion((await probe(["fish", "--version"])).stdout)
     return { status: "ok", message: `fish — ${version} (${path})` }
   },
 }
@@ -246,7 +247,7 @@ const fisherCheck: Check = {
   section: "Shell",
   label: "fisher",
   run: async () => {
-    const present = await run(["fish", "-c", "type -q fisher"])
+    const present = await probe(["fish", "-c", "type -q fisher"])
     if (!present.ok) return { status: "warn", message: "fisher — not installed" }
     const manifest = Bun.file(join(HOME_DIR, ".config", "fish", "fish_plugins"))
     const text = (await manifest.exists()) ? await manifest.text() : ""
@@ -383,15 +384,20 @@ const vendoredCheck: Check = {
   run: async () => {
     const manifest = Bun.file(join(SKILLS_REPO, "vendor-manifest.json"))
     if (!(await manifest.exists())) return { status: "info", message: "" }
-    try {
-      const data = (await manifest.json()) as VendorManifest
-      const summary = data.vendors
-        .map((v) => `${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
-        .join(" · ")
-      return { status: "info", message: `vendored: ${summary}` }
-    } catch {
-      return { status: "warn", message: "vendored — vendor-manifest.json unreadable" }
-    }
+
+    const parsed = await Result.tryPromise(async () => (await manifest.json()) as VendorManifest)
+    return Result.match<VendorManifest, unknown, CheckResult>(parsed, {
+      ok: (data) => ({
+        status: "info",
+        message: `vendored: ${data.vendors
+          .map((v) => `${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
+          .join(" · ")}`,
+      }),
+      err: () => ({
+        status: "warn",
+        message: "vendored — vendor-manifest.json unreadable",
+      }),
+    })
   },
 }
 
@@ -402,7 +408,7 @@ const vendoredIntegrityCheck: Check = {
   run: async () => {
     const script = join(SKILLS_REPO, "scripts", "verify-vendored.sh")
     if (!(await pathExists(script))) return { status: "info", message: "" }
-    const res = await run([script], { cwd: SKILLS_REPO })
+    const res = await probe([script], { cwd: SKILLS_REPO })
     if (res.ok) return { status: "ok", message: "vendored integrity — all hashes match" }
     return {
       status: "warn",
@@ -434,9 +440,9 @@ const gitSigningCheck: Check = {
   label: "git signing",
   run: async () => {
     const [format, key, gpgsign] = await Promise.all([
-      run(["git", "config", "--get", "gpg.format"]),
-      run(["git", "config", "--get", "user.signingkey"]),
-      run(["git", "config", "--get", "commit.gpgsign"]),
+      probe(["git", "config", "--get", "gpg.format"]),
+      probe(["git", "config", "--get", "user.signingkey"]),
+      probe(["git", "config", "--get", "commit.gpgsign"]),
     ])
     const signingKey = key.stdout.trim()
     if (format.stdout.trim() !== "ssh" || signingKey === "") {
@@ -495,7 +501,7 @@ const untrackedPackagesCheck: Check = {
       `dotfiles-bundle-dump.${process.pid}`,
     )
     try {
-      const dump = await run(["brew", "bundle", "dump", `--file=${tmp}`, "--force"])
+      const dump = await probe(["brew", "bundle", "dump", `--file=${tmp}`, "--force"])
       if (!dump.ok)
         return { status: "warn", message: "untracked packages — could not dump brew state" }
 

@@ -17,7 +17,7 @@
 // that relies on it silently works on some machines and not others. We instead
 // prepend the prefix's bin/sbin explicitly, which is deterministic.
 import { join } from "node:path"
-import { commandExists, env, run, runInteractive, which } from "../lib/exec.ts"
+import { commandExists, env, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
 import { withSuspendedUI } from "../tui/renderer.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
@@ -28,7 +28,7 @@ const CANDIDATE_PREFIXES = ["/opt/homebrew", "/usr/local"]
 async function detectPrefix(): Promise<string | null> {
   const existing = await which("brew")
   if (existing) {
-    const res = await run([existing, "--prefix"])
+    const res = await probe([existing, "--prefix"])
     if (res.ok && res.stdout.trim()) return res.stdout.trim()
   }
   for (const prefix of CANDIDATE_PREFIXES) {
@@ -47,7 +47,7 @@ export async function activateHomebrew(): Promise<string | null> {
 
   // Absorb HOMEBREW_PREFIX / HOMEBREW_CELLAR / INFOPATH / MANPATH, and PATH too
   // on older Homebrew versions that still emit it.
-  const shellenv = await run([join(prefix, "bin", "brew"), "shellenv"])
+  const shellenv = await probe([join(prefix, "bin", "brew"), "shellenv"])
   if (shellenv.ok) env.absorbShellenv(shellenv.stdout)
 
   // Then assert PATH ourselves, AFTER absorbing, so we win regardless of which
@@ -69,7 +69,7 @@ export async function ensureHomebrew(): Promise<boolean> {
   printInfo("Installing Homebrew (non-interactive)...")
   // The installer needs the terminal: it prints progress and may ask for sudo.
   const code = await withSuspendedUI(() =>
-    runInteractive(
+    runInteractiveCode(
       [
         "/bin/bash",
         "-c",

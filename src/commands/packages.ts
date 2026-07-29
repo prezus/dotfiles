@@ -3,7 +3,7 @@ import { readdir, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { bundleStatus, installCommand, readBundle, type BrewEntry } from "../lib/brew.ts"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, runInteractive } from "../lib/exec.ts"
+import { commandExists, runInteractiveCode } from "../lib/exec.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 export async function checkPackages(): Promise<number> {
@@ -72,7 +72,7 @@ export async function retryFailed(): Promise<number> {
     const name = rest.join(":")
     if (!name) continue
     const entry = { kind: kind === "cask" ? "cask" : "brew", name } as BrewEntry
-    const code = await runInteractive(installCommand(entry))
+    const code = await runInteractiveCode(installCommand(entry))
     if (code === 0) reinstalled++
     else stillFailing.push(`${entry.kind}:${name}`)
   }

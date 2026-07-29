@@ -4,7 +4,7 @@
 // appends to .zshrc/.profile. Because those are stowed, its writes land in the
 // repo — don't hand-edit or strip them (AGENTS.md → KEY DECISIONS).
 import { join } from "node:path"
-import { env, extract, run, runInteractive } from "../lib/exec.ts"
+import { env, extract, probe, runInteractiveCode } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 import { withSuspendedUI } from "../tui/renderer.ts"
@@ -24,19 +24,19 @@ export async function setDefaultNodeLatest(): Promise<void> {
   if (!(await pathExists(vp))) return
 
   // Capture in full before matching — piping vp into an early-exiting reader
-  // (grep -q, awk exit, head) SIGPIPEs it into an "Abort trap: 6". run()
+  // (grep -q, awk exit, head) SIGPIPEs it into an "Abort trap: 6". probe()
   // always drains, so this hazard is structurally gone.
-  const current = await run([vp, "env", "current"])
+  const current = await probe([vp, "env", "current"])
   const version = extract(current.stdout, /Version\s+(\S+)/)
 
-  const currentDefault = await run([vp, "env", "default"])
+  const currentDefault = await probe([vp, "env", "default"])
   if (currentDefault.stdout.includes("version: latest")) {
     printSuccess(`Vite+ Node default — latest (${version ?? "?"})`)
     return
   }
 
   printInfo("Setting Vite+ default Node to latest...")
-  const res = await run([vp, "env", "default", "latest"])
+  const res = await probe([vp, "env", "default", "latest"])
   if (!res.ok) printWarning("could not set Vite+ default Node version")
 }
 
@@ -44,13 +44,13 @@ export async function viteplus(): Promise<number> {
   const vp = VP()
 
   if (await pathExists(vp)) {
-    const version = (await run([vp, "--version"])).stdout.split("\n")[0]?.trim()
+    const version = (await probe([vp, "--version"])).stdout.split("\n")[0]?.trim()
     printSuccess(`Vite+ already installed (${version})`)
   } else {
     printInfo("Installing Vite+ (curl https://vite.plus | bash)...")
     // VP_NODE_MANAGER=yes → Vite+ manages Node versions, non-interactively.
     const code = await withSuspendedUI(() =>
-      runInteractive(["/bin/bash", "-c", "curl -fsSL https://vite.plus | bash"], {
+      runInteractiveCode(["/bin/bash", "-c", "curl -fsSL https://vite.plus | bash"], {
         extraEnv: { VP_NODE_MANAGER: "yes" },
       }),
     )

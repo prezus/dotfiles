@@ -4,7 +4,7 @@
 // is equivalent from the editor's point of view (it owns the same tty); we just
 // propagate its exit code instead of never returning.
 import { DOTFILES_DIR } from "../lib/env.ts"
-import { commandExists, runInteractive } from "../lib/exec.ts"
+import { commandExists, runInteractiveCode } from "../lib/exec.ts"
 import { printError } from "../lib/ui.ts"
 
 export async function edit(): Promise<number> {
@@ -13,5 +13,5 @@ export async function edit(): Promise<number> {
     printError(`editor '${editor}' not found`)
     return 1
   }
-  return await runInteractive([editor, DOTFILES_DIR])
+  return await runInteractiveCode([editor, DOTFILES_DIR])
 }

@@ -7,7 +7,7 @@
 // DOTFILES_DIR is passed explicitly: the bash script derives it from its own
 // location, which now resolves to `<repo>/legacy` rather than the repo root.
 import { DOTFILES_DIR, LEGACY_SCRIPT } from "./lib/env.ts"
-import { runInteractive } from "./lib/exec.ts"
+import { runInteractiveCode } from "./lib/exec.ts"
 
 /**
  * Hand a subcommand to the bash implementation, inheriting the terminal so
@@ -15,7 +15,7 @@ import { runInteractive } from "./lib/exec.ts"
  * Returns the child's exit code.
  */
 export async function runLegacy(command: string, args: string[] = []): Promise<number> {
-  return await runInteractive(["bash", LEGACY_SCRIPT, command, ...args], {
+  return await runInteractiveCode(["bash", LEGACY_SCRIPT, command, ...args], {
     extraEnv: { DOTFILES_DIR },
   })
 }

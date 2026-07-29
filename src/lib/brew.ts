@@ -9,7 +9,7 @@
 // human-facing and can change between brew releases; a set difference cannot.
 import { join } from "node:path"
 import { PACKAGES_DIR } from "./env.ts"
-import { run } from "./exec.ts"
+import { probe } from "./exec.ts"
 
 export type EntryKind = "brew" | "cask" | "tap" | "go" | "cargo" | "vscode" | "mas"
 
@@ -62,9 +62,9 @@ export async function bundleStatus(entries?: BrewEntry[]): Promise<BundleStatus>
   const all = entries ?? (await readBundle())
 
   const [formulae, casks, taps] = await Promise.all([
-    run(["brew", "list", "--formula", "-1"]),
-    run(["brew", "list", "--cask", "-1"]),
-    run(["brew", "tap"]),
+    probe(["brew", "list", "--formula", "-1"]),
+    probe(["brew", "list", "--cask", "-1"]),
+    probe(["brew", "tap"]),
   ])
 
   const toSet = (out: string) =>

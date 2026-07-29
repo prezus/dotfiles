@@ -5,7 +5,7 @@
 // eliminated entirely.
 import { join } from "node:path"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, runInteractive } from "../lib/exec.ts"
+import { commandExists, runInteractiveCode } from "../lib/exec.ts"
 import { parseSimpleList } from "../lib/lists.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
@@ -29,7 +29,7 @@ export async function bunGlobals(): Promise<number> {
 
   printInfo(`Installing bun globals: ${packages.join(" ")}`)
   // One invocation — bun parallelises internally.
-  const code = await runInteractive(["bun", "add", "-g", ...packages])
+  const code = await runInteractiveCode(["bun", "add", "-g", ...packages])
   if (code === 0) printSuccess("bun globals installed")
   else printWarning("some bun globals failed")
   return code

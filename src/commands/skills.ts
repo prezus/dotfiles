@@ -4,9 +4,10 @@
 // Two behaviours there are load-bearing and must not drift:
 //   - install never silently deletes: a real dir is backed up to .bak.<ts>
 //   - update NEVER auto-commits; it stops for human review of the diff
+import { Result } from "better-result"
 import { join } from "node:path"
 import { HOME, SKILLS_REPO, SKILLS_SRC } from "../lib/env.ts"
-import { run, runInteractive } from "../lib/exec.ts"
+import { probe, runInteractiveCode } from "../lib/exec.ts"
 import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
@@ -38,7 +39,7 @@ async function reportLink(linkPath: string, target: string): Promise<void> {
 async function install(): Promise<number> {
   if (!(await isDirectory(SKILLS_SRC))) {
     printInfo(`Cloning prezus/skills → ${SKILLS_REPO} (public, HTTPS)...`)
-    const code = await runInteractive([
+    const code = await runInteractiveCode([
       "git",
       "clone",
       "https://github.com/prezus/skills.git",
@@ -71,7 +72,7 @@ async function update(): Promise<number> {
   }
 
   printInfo("Syncing vendored skills (all vendors @ pinnedRef; set VENDOR=/REF= to scope)...")
-  const code = await runInteractive([script], {
+  const code = await runInteractiveCode([script], {
     cwd: SKILLS_REPO,
     extraEnv: { VENDOR: process.env.VENDOR ?? "", REF: process.env.REF ?? "" },
   })
@@ -79,7 +80,7 @@ async function update(): Promise<number> {
 
   // INSTALL.md §3: stop for human review. Never auto-commit.
   printInfo("Review the diff, then commit:")
-  await runInteractive(["git", "-C", SKILLS_REPO, "--no-pager", "diff", "--stat"])
+  await runInteractiveCode(["git", "-C", SKILLS_REPO, "--no-pager", "diff", "--stat"])
   return code
 }
 
@@ -89,7 +90,7 @@ async function verify(): Promise<number> {
     printWarning(`No verify script at ${script}`)
     return 1
   }
-  return await runInteractive([script], { cwd: SKILLS_REPO })
+  return await runInteractiveCode([script], { cwd: SKILLS_REPO })
 }
 
 async function status(): Promise<number> {
@@ -106,14 +107,15 @@ async function status(): Promise<number> {
   // Native JSON read — this was a `node -e "require(...)"` shell-out in bash.
   const manifest = Bun.file(join(SKILLS_REPO, "vendor-manifest.json"))
   if (await manifest.exists()) {
-    try {
-      const data = (await manifest.json()) as VendorManifest
-      for (const v of data.vendors) {
-        console.log(`  vendored: ${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
-      }
-    } catch {
-      printWarning("  vendor-manifest.json is unreadable")
-    }
+    const parsed = await Result.tryPromise(async () => (await manifest.json()) as VendorManifest)
+    Result.match(parsed, {
+      ok: (data) => {
+        for (const v of data.vendors) {
+          console.log(`  vendored: ${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
+        }
+      },
+      err: () => printWarning("  vendor-manifest.json is unreadable"),
+    })
   }
   return 0
 }

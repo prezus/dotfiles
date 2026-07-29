@@ -11,7 +11,7 @@ import { unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { runLegacy } from "../../legacy.ts"
 import { FISH_TOOL_COMPLETIONS, HOME, HOME_DIR, PACKAGES_DIR } from "../../lib/env.ts"
-import { commandExists, run, runInteractive, which } from "../../lib/exec.ts"
+import { commandExists, probe, runInteractiveCode, which } from "../../lib/exec.ts"
 import { findBrokenSymlinks } from "../../lib/fs.ts"
 import { withSuspendedUI } from "../../tui/renderer.ts"
 
@@ -28,7 +28,7 @@ export const FIXES: Record<string, Fix> = {
       const fish = await which("fish")
       if (!fish) return "fish is not installed"
       // chsh prompts for a password — must own the terminal.
-      const code = await withSuspendedUI(() => runInteractive(["chsh", "-s", fish]))
+      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fish]))
       return code === 0 ? `login shell → ${fish} (log out/in to apply)` : "chsh failed"
     },
   },
@@ -42,7 +42,7 @@ export const FIXES: Record<string, Fix> = {
       let made = 0
       for (const tool of FISH_TOOL_COMPLETIONS) {
         if (!(await commandExists(tool))) continue
-        const res = await run([tool, "completion", "fish"])
+        const res = await probe([tool, "completion", "fish"])
         if (!res.ok || res.stdout.trim() === "") continue
         await Bun.write(join(dir, `${tool}.fish`), res.stdout)
         made++

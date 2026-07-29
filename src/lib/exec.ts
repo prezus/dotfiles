@@ -10,6 +10,9 @@
 //     it has to be explicit: `Env` is threaded through a run and amended in
 //     place. Get this wrong and `init` breaks ONLY on a fresh machine.
 
+import { Result } from "better-result"
+import { SpawnError } from "./errors.ts"
+
 /** A process environment that later steps can amend, mimicking a single shell. */
 export class Env {
   private vars: Record<string, string>
@@ -107,19 +110,33 @@ export type RunOptions = {
 
 /**
  * Run a command and capture its output. Output is fully drained, so the child
- * never sees a closed pipe. Never throws on a non-zero exit — check `.ok`.
+ * never sees a closed pipe.
+ *
+ * A non-zero exit is NOT an error — it is a RunResult with ok:false, because
+ * "the tool ran and said no" is usually the answer we wanted. The Err case is
+ * reserved for the process failing to start at all, which Bun.spawn throws on
+ * and which used to escape this function despite the comment claiming otherwise.
  */
-export async function run(cmd: string[], opts: RunOptions = {}): Promise<RunResult> {
+export async function run(
+  cmd: string[],
+  opts: RunOptions = {},
+): Promise<Result<RunResult, SpawnError>> {
   const [bin, ...args] = cmd
-  if (!bin) throw new Error("run() called with an empty command")
+  if (!bin) return Result.err(new SpawnError({ command: "", message: "empty command" }))
 
-  const proc = Bun.spawn([bin, ...args], {
-    cwd: opts.cwd,
-    env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
-    stdin: opts.stdin ?? "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+  const spawned = Result.try(() =>
+    Bun.spawn([bin, ...args], {
+      cwd: opts.cwd,
+      env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
+      stdin: opts.stdin ?? "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    }),
+  )
+  if (Result.isError(spawned)) {
+    return Result.err(new SpawnError({ command: cmd.join(" "), message: String(spawned.error) }))
+  }
+  const proc = spawned.value
 
   // Drain both pipes concurrently before awaiting exit, or a child that fills
   // the stderr buffer while we read stdout deadlocks.
@@ -129,30 +146,61 @@ export async function run(cmd: string[], opts: RunOptions = {}): Promise<RunResu
     proc.exited,
   ])
 
-  return { code, stdout, stderr, ok: code === 0 }
+  return Result.ok({ code, stdout, stderr, ok: code === 0 })
+}
+
+/**
+ * Run a command where absence is an expected answer — version probes, feature
+ * detection, anything doctor does. A missing binary yields exit 127 with an
+ * empty stdout, matching the shell's "command not found" convention, so callers
+ * that only care about output stay readable.
+ */
+export async function probe(cmd: string[], opts: RunOptions = {}): Promise<RunResult> {
+  const result = await run(cmd, opts)
+  return Result.match(result, {
+    ok: (value) => value,
+    err: (error) => ({ code: 127, stdout: "", stderr: error.message, ok: false }),
+  })
 }
 
 /**
  * Run a command that owns the terminal — sudo prompts, chsh, brew bundle,
  * third-party `curl | bash` installers. Inside a TUI, wrap in withSuspendedUI().
  */
-export async function runInteractive(cmd: string[], opts: RunOptions = {}): Promise<number> {
+export async function runInteractive(
+  cmd: string[],
+  opts: RunOptions = {},
+): Promise<Result<number, SpawnError>> {
   const [bin, ...args] = cmd
-  if (!bin) throw new Error("runInteractive() called with an empty command")
+  if (!bin) return Result.err(new SpawnError({ command: "", message: "empty command" }))
 
-  const proc = Bun.spawn([bin, ...args], {
-    cwd: opts.cwd,
-    env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  })
-  return await proc.exited
+  const spawned = Result.try(() =>
+    Bun.spawn([bin, ...args], {
+      cwd: opts.cwd,
+      env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    }),
+  )
+  if (Result.isError(spawned)) {
+    return Result.err(new SpawnError({ command: cmd.join(" "), message: String(spawned.error) }))
+  }
+  return Result.ok(await spawned.value.exited)
+}
+
+/**
+ * Exit code for a command that owns the terminal, treating a failure to start
+ * as a failure to run. Most callers want this: they are about to `return` it.
+ */
+export async function runInteractiveCode(cmd: string[], opts: RunOptions = {}): Promise<number> {
+  const result = await runInteractive(cmd, opts)
+  return Result.unwrapOr(result, 127)
 }
 
 /** Resolved path of an executable, or null. Equivalent to `command -v`. */
 export async function which(bin: string): Promise<string | null> {
-  const res = await run(["/usr/bin/which", bin])
+  const res = await probe(["/usr/bin/which", bin])
   const path = res.stdout.trim()
   return res.ok && path ? path : null
 }

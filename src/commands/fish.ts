@@ -4,7 +4,7 @@
 // the TUI they go through withSuspendedUI.
 import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR } from "../lib/env.ts"
-import { commandExists, run, runInteractive, which } from "../lib/exec.ts"
+import { commandExists, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { confirm, printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 import { withSuspendedUI } from "../tui/renderer.ts"
 
@@ -16,7 +16,7 @@ async function registerShell(fishPath: string): Promise<void> {
 
   printInfo("Adding fish to /etc/shells (sudo)...")
   await withSuspendedUI(() =>
-    runInteractive(["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`]),
+    runInteractiveCode(["/bin/bash", "-c", `echo ${JSON.stringify(fishPath)} | sudo tee -a /etc/shells >/dev/null`]),
   )
 }
 
@@ -30,7 +30,7 @@ export async function generateToolCompletions(): Promise<number> {
   let made = 0
   for (const tool of FISH_TOOL_COMPLETIONS) {
     if (!(await commandExists(tool))) continue
-    const res = await run([tool, "completion", "fish"])
+    const res = await probe([tool, "completion", "fish"])
     if (!res.ok || res.stdout.trim() === "") continue
     await Bun.write(join(dir, `${tool}.fish`), res.stdout)
     made++
@@ -56,7 +56,7 @@ export async function fish(): Promise<number> {
       printInfo(`login shell is ${process.env.SHELL} — run interactively to switch to fish`)
     } else if (await confirm("Set fish as your default shell?", true)) {
       // chsh prompts for a password — it must own the terminal.
-      const code = await withSuspendedUI(() => runInteractive(["chsh", "-s", fishPath]))
+      const code = await withSuspendedUI(() => runInteractiveCode(["chsh", "-s", fishPath]))
       if (code === 0) printSuccess("Default shell → fish (log out/in to apply)")
       else printWarning("chsh failed")
     }
@@ -68,7 +68,7 @@ export async function fish(): Promise<number> {
   // manifest. fisher self-installs as a fish FUNCTION — there is deliberately
   // no `brew "fisher"`, which would shadow it (AGENTS.md → NOTES).
   printInfo("Installing fish plugins via fisher...")
-  const fisher = await run([
+  const fisher = await probe([
     "fish",
     "-c",
     "type -q fisher; or curl -sL https://raw.githubusercontent.com/jorgebucaran/fisher/main/functions/fisher.fish | source && fisher install jorgebucaran/fisher; fisher update",
