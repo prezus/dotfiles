@@ -20,6 +20,18 @@ repo `.gitignore`):
 `auth.json` and `sessions/` stay as real files in `~/.pi/agent`; only `settings.json`
 and `themes/` are symlinked from here, so `~/.pi/agent` remains a real directory.
 
+## Extensions
+
+Pi packages are installed with `pi install <source>` (npm:, git:, https:, or a local
+path), and the source is recorded in `agent/settings.json` — which **is** tracked here, so
+the list is committed automatically.
+
+The installs themselves are not tracked, exactly like fisher plugins: `fish_plugins` is
+the manifest and `fisher update` restores. For Pi the equivalent restore is
+`pi update --extensions`, which `dotfiles update` runs. `dotfiles doctor` reports the
+installed count, so a machine that has the list but not the packages is visible rather
+than silent.
+
 ## Skills — consumed, not owned
 
 Pi does **not** carry its own skills. It reads the same canonical pool every agent uses,

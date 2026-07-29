@@ -62,6 +62,15 @@ async function updateExtras(): Promise<void> {
   const fisher = await probe(["fish", "-c", "type -q fisher; and fisher update"])
   if (fisher.ok) printSuccess("fisher plugins updated")
 
+  // Pi extensions are the same shape as fisher plugins: `pi install` records the
+  // source in settings.json, which is stowed and therefore committed — but
+  // nothing ever installed them back. A fresh machine would stow a settings file
+  // naming extensions and silently have none of them.
+  if (await commandExists("pi")) {
+    printInfo("pi update --extensions...")
+    await runInteractiveCode(["pi", "update", "--extensions"])
+  }
+
   const vp = join(env.get("HOME") ?? HOME, ".vite-plus", "bin", "vp")
   if (await pathExists(vp)) {
     printInfo("Vite+ upgrade (vp)...")

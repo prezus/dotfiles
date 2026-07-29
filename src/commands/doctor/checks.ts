@@ -247,6 +247,20 @@ const agentChecks: Check[] = AGENT_TOOLS.map(({ bin, label, formula }) => ({
     const path = await which(bin)
     if (!path) return { status: "warn", message: `${label} — missing (brew install ${formula})` }
     const version = firstLine((await probe([bin, "--version"])).stdout)
+
+    // Pi extensions live in settings.json, which is stowed — so the LIST is
+    // tracked while the installs are not, exactly like fisher plugins. Report
+    // the count so a machine missing them is visible rather than silent.
+    if (bin === "pi") {
+      const listed = await probe(["pi", "list"])
+      const count = listed.stdout
+        .split("\n")
+        .filter((l) => l.trim() !== "" && !/no packages installed/i.test(l)).length
+      return {
+        status: "ok",
+        message: `${label} — ${version || "installed"} · ${count} extension(s) (${path})`,
+      }
+    }
     return { status: "ok", message: `${label} — ${version || "installed"} (${path})` }
   },
 }))
