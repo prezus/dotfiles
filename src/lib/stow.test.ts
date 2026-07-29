@@ -106,6 +106,32 @@ describe("planStow", () => {
     expect(plan.conflicts).toHaveLength(1)
   })
 
+  it("never reclaims when the existing file is a PREFIX of ours", async () => {
+    // Found by mutation testing. The comparison loop ran to the shorter
+    // buffer's length, so a truncated file compared equal to the full one and
+    // would have been silently deleted by reclaim.
+    await writeFile(join(source, "f"), "abcdef")
+    await writeFile(join(target, "f"), "abc") // a truncated copy
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(0)
+    expect(plan.conflicts).toHaveLength(1)
+  })
+
+  it("never reclaims when ours is a prefix of the existing file", async () => {
+    await writeFile(join(source, "f"), "abc")
+    await writeFile(join(target, "f"), "abcdef") // extra content we would destroy
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(0)
+    expect(plan.conflicts).toHaveLength(1)
+  })
+
+  it("reclaims two empty files, which are genuinely identical", async () => {
+    await writeFile(join(source, "f"), "")
+    await writeFile(join(target, "f"), "")
+    const plan = await planStow(source, target)
+    expect(plan.reclaim).toHaveLength(1)
+  })
+
   it("flags a RELATIVE symlink pointing outside the repo as a foreign link", async () => {
     await writeFile(join(root, "elsewhere.fish"), "someone else's file")
     await writeFile(join(source, "docker.fish"), "ours")

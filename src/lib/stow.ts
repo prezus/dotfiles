@@ -57,11 +57,15 @@ export type StowPlan = {
 /** Byte-for-byte comparison. Only called for the handful of blocked paths. */
 async function sameContent(a: string, b: string): Promise<boolean> {
   try {
-    const [fa, fb] = [Bun.file(a), Bun.file(b)]
-    if (fa.size !== fb.size) return false
-    const [ba, bb] = await Promise.all([fa.arrayBuffer(), fb.arrayBuffer()])
+    const [ba, bb] = await Promise.all([Bun.file(a).arrayBuffer(), Bun.file(b).arrayBuffer()])
     const va = new Uint8Array(ba)
     const vb = new Uint8Array(bb)
+    // Compare the ACTUAL buffer lengths, not a stat() size taken beforehand.
+    // Mutation testing found the earlier version was one early-return away from
+    // reporting a truncated file as identical: the byte loop ran to va.length,
+    // so a file that was a prefix of the other compared equal. `reclaim` DELETES
+    // based on this answer, so it must not depend on a single guard.
+    if (va.length !== vb.length) return false
     for (let i = 0; i < va.length; i++) if (va[i] !== vb[i]) return false
     return true
   } catch {
