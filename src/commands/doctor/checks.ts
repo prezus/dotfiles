@@ -11,7 +11,7 @@
 // IMPORTANT: this file must NOT import anything from @opentui or src/tui.
 // Keeping the data layer renderer-free is what lets a breaking OpenTUI bump
 // touch one directory instead of the whole command.
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import {
   DOTFILES_DIR,
   FISH_TOOL_COMPLETIONS,
@@ -275,32 +275,56 @@ const fishCompletionsCheck: Check = {
   label: "fish completions",
   run: async () => {
     const dir = join(HOME, ".config", "fish", "completions")
-    const present: string[] = []
+    const ours: string[] = []
+    const shadowed: string[] = []
     const missing: string[] = []
 
     await Promise.all(
       FISH_TOOL_COMPLETIONS.map(async (tool) => {
         if (!(await commandExists(tool))) return
-        const file = Bun.file(join(dir, `${tool}.fish`))
-        const ok = (await file.exists()) && file.size > 0
-        ;(ok ? present : missing).push(tool)
+        const path = join(dir, `${tool}.fish`)
+        const file = Bun.file(path)
+        if (!(await file.exists()) || file.size === 0) {
+          missing.push(tool)
+          return
+        }
+        // Non-empty is not enough. The bash check stopped here and reported a
+        // green tick — but OrbStack installs its own docker/kubectl/orbctl
+        // completions over ours, so "present" was hiding "not the repo's".
+        const target = await readlinkSafe(path)
+        const resolved = target === null ? path : resolve(dir, target)
+        ;(resolved.startsWith(HOME_DIR) ? ours : shadowed).push(tool)
       }),
     )
     // Preserve the declared order rather than completion-race order.
     const order = (a: string, b: string) =>
       FISH_TOOL_COMPLETIONS.indexOf(a as never) - FISH_TOOL_COMPLETIONS.indexOf(b as never)
-    present.sort(order)
+    ours.sort(order)
+    shadowed.sort(order)
     missing.sort(order)
 
-    if (missing.length === 0) {
+    if (missing.length > 0) {
       return {
-        status: "ok",
-        message: `fish completions — ${present.length ? present.join(" ") : "none expected"} present`,
+        status: "warn",
+        message: `fish completions — missing/empty: ${missing.join(" ")} (run: dotfiles fish)`,
       }
     }
+
+    const summary = ours.length ? ours.join(" ") : "none"
+    if (shadowed.length === 0) {
+      return { status: "ok", message: `fish completions — ${summary} present` }
+    }
+    // Not an error: AGENTS.md says OrbStack re-adds its own and not to fight it.
+    // But regenerating ours is a no-op for those tools, which is worth knowing.
     return {
-      status: "warn",
-      message: `fish completions — missing/empty: ${missing.join(" ")} (run: dotfiles fish)`,
+      status: "ok",
+      message: `fish completions — ${summary} present`,
+      extra: [
+        {
+          kind: "info",
+          text: `${shadowed.join(" ")} shadowed by another provider (not the repo's copy)`,
+        },
+      ],
     }
   },
 }

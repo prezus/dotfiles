@@ -9,6 +9,10 @@
 // `__commands` subcommand on every tab-complete, so adding an entry here is all
 // that is required — there is no second list to keep in sync.
 import { doctor } from "./commands/doctor/index.ts"
+import { edit } from "./commands/edit.ts"
+import { checkPackages, retryFailed } from "./commands/packages.ts"
+import { skills } from "./commands/skills.ts"
+import { stow } from "./commands/stow.ts"
 import { runLegacy } from "./legacy.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
 import { BOLD, RESET, printError } from "./lib/ui.ts"
@@ -43,7 +47,8 @@ const COMMANDS: Command[] = [
   {
     name: "stow",
     description: "Re-symlink home/ into $HOME (--adopt on an existing machine)",
-    run: (args) => runLegacy("stow", args),
+    help: "Re-symlink home/ → $HOME  (--adopt on an existing machine, --dry-run to preview)",
+    run: (args) => stow(args),
   },
   {
     name: "ssh",
@@ -74,23 +79,25 @@ const COMMANDS: Command[] = [
   },
   {
     name: "skills",
-    description: "install | update | status (from prezus/skills)",
-    run: (args) => runLegacy("skills", args),
+    // `verify` was dispatched by the bash but missing from its completion list,
+    // so fish never suggested it. Now that it is real TypeScript, list it.
+    description: "install | update | status | verify (from prezus/skills)",
+    run: (args) => skills(args),
   },
   {
     name: "check-packages",
     description: "Show which Brewfile packages are missing",
-    run: (args) => runLegacy("check-packages", args),
+    run: () => checkPackages(),
   },
   {
     name: "retry-failed",
     description: "Reinstall packages that failed during init",
-    run: (args) => runLegacy("retry-failed", args),
+    run: () => retryFailed(),
   },
   {
     name: "edit",
     description: "Open the dotfiles repo in $EDITOR",
-    run: (args) => runLegacy("edit", args),
+    run: () => edit(),
   },
   {
     name: "help",
