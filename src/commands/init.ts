@@ -19,7 +19,7 @@ import { ssh } from "./ssh.ts"
 import { stow } from "./stow.ts"
 import { viteplus } from "./viteplus.ts"
 import { runSteps, type Step } from "../lib/steps.ts"
-import { printError, printHeader, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
+import { getStepSink, printError, printHeader, printSuccess, printWarning } from "../lib/ui.ts"
 
 /** Adapt a command that returns an exit code into a step outcome. */
 const fromExitCode = async (fn: () => Promise<number>) => {
@@ -80,8 +80,11 @@ export async function init(): Promise<number> {
   printHeader("Initializing dotfiles")
 
   const summary = await runSteps(steps, (report, index, total) => {
+    // Structured progress for the TUI's status bar; the printed lines below are
+    // for the plain CLI (and become single pane rows when a sink is installed).
+    getStepSink()?.({ index, total, title: report.step.title, state: report.state })
     if (report.state === "running") {
-      printRaw(`\n[${index + 1}/${total}] ${report.step.title}`)
+      printHeader(`[${index + 1}/${total}] ${report.step.title}`)
       return
     }
     if (report.state === "pending" || report.state === "skipped") return

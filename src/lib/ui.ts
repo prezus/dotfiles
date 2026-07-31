@@ -1,3 +1,4 @@
+import type { StepState } from "./steps.ts"
 import { withTerminal } from "./terminal.ts"
 
 // Line-oriented output. Mirrors the bash print_* helpers byte-for-byte so the
@@ -36,7 +37,15 @@ export type LogLevel = "header" | "ok" | "warn" | "error" | "info" | "raw"
  * This is the same seam as checks-as-data: the commands emit values, and the
  * caller decides how they are shown. All 166 print* call sites are unaffected.
  */
-export type LogSink = (level: LogLevel, message: string) => void
+export type LogSink = (level: LogLevel, message: string, opts?: LogOptions) => void
+
+/**
+ * `transient` marks a line the child is still redrawing — a download bar mid-
+ * flight. It supersedes the previous transient rather than stacking below it,
+ * so a two-minute `brew upgrade` leaves one live line instead of a thousand
+ * dead frames. Consumers that don't care may ignore it and simply append.
+ */
+export type LogOptions = { transient?: boolean }
 
 let sink: LogSink | null = null
 
@@ -47,9 +56,28 @@ export const setLogSink = (next: LogSink | null): void => {
 /** Whether output is being captured for a UI rather than written to stdout. */
 export const getLogSink = (): LogSink | null => sink
 
-const emit = (level: LogLevel, message: string, formatted: string): void => {
+/**
+ * Structured step progress for a status bar; latest event wins.
+ *
+ * A separate channel from LogSink on purpose: step state is not a log line, and
+ * smuggling it through one would force the UI to parse back what the command
+ * just serialized. Same seam, different shape.
+ */
+export type StepEvent = { index: number; total: number; title: string; state: StepState }
+
+export type StepSink = (event: StepEvent) => void
+
+let stepSink: StepSink | null = null
+
+export const setStepSink = (next: StepSink | null): void => {
+  stepSink = next
+}
+
+export const getStepSink = (): StepSink | null => stepSink
+
+const emit = (level: LogLevel, message: string, formatted: string, opts?: LogOptions): void => {
   if (sink) {
-    sink(level, message)
+    sink(level, message, opts)
     return
   }
   if (level === "error") console.error(formatted)

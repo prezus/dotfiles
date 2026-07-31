@@ -9,14 +9,26 @@
 // pipes must never land in a full-screen app.
 import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { DoctorView } from "../commands/doctor/view.tsx"
 import { countCriticalIssues, runChecks, type CompletedCheck } from "../commands/doctor/checks.ts"
 import { UPDATE_TASKS, update } from "../commands/update.ts"
 import { VERSION } from "../lib/env.ts"
-import { setLogSink, type LogLevel } from "../lib/ui.ts"
+import { setLogSink, setStepSink, type StepEvent } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import { initialHomeState, reduceHomeKey } from "./interaction.ts"
+import {
+  currentActivity,
+  emptyPane,
+  FLUSH_MS,
+  mergeBatch,
+  paneRows,
+  pinnedSection,
+  statusBar,
+  styleFor,
+  type LogEntry,
+  type PaneState,
+} from "./output-pane.ts"
 import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
@@ -32,6 +44,7 @@ type Summary = {
   checks: CompletedCheck[] | null
   stow: StowPlan | null
 }
+
 
 export async function runHomeTui(commands: HomeCommand[]): Promise<number> {
   const renderer = await createCliRenderer()
@@ -70,7 +83,43 @@ function Home({
   // renderer overwrote the global in setRenderer(), so afterwards
   // withSuspendedUI pointed at a destroyed renderer.
   const [view, setView] = useState<"home" | "doctor" | "update" | "output">("home")
-  const [logs, setLogs] = useState<{ level: LogLevel; message: string }[]>([])
+  const [output, setOutput] = useState<PaneState>(emptyPane)
+
+  // The status bar's clock. Bumped on every flush — including empty ones — so
+  // the spinner and elapsed time keep moving while brew compiles in silence.
+  // Without it the pane only redrew when the child produced bytes, and a quiet
+  // 30-second pour looked exactly like a hang.
+  const [tick, setTick] = useState(0)
+  const [step, setStep] = useState<StepEvent | null>(null)
+  const [label, setLabel] = useState("")
+  const startedAt = useRef(0)
+  const stepRef = useRef<StepEvent | null>(null)
+
+  // Output is buffered here and drained on a timer. Writing straight to state
+  // meant one React reconcile per line of child output, which at brew's output
+  // rate strobed the pane instead of filling it.
+  const pending = useRef<LogEntry[]>([])
+  const flushTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const flushPending = useCallback(() => {
+    setTick((t) => t + 1)
+    if (stepRef.current !== null) {
+      setStep(stepRef.current)
+      stepRef.current = null
+    }
+    if (pending.current.length === 0) return
+    const batch = pending.current
+    pending.current = []
+    setOutput((prev) => mergeBatch(prev, batch))
+  }, [])
+
+  const stopFlushing = useCallback(() => {
+    if (flushTimer.current !== null) clearInterval(flushTimer.current)
+    flushTimer.current = null
+  }, [])
+
+  // A command still running when the app exits must not leave a timer behind.
+  useEffect(() => stopFlushing, [stopFlushing])
 
   const names = commands.map((c) => c.name)
 
@@ -98,10 +147,22 @@ function Home({
   const runInPane = useCallback(
     async (label: string, run: () => Promise<number>) => {
       setBusy(true)
-      setLogs([])
+      pending.current = []
+      stepRef.current = null
+      startedAt.current = Date.now()
+      setOutput(emptyPane)
+      setTick(0)
+      setStep(null)
+      setLabel(label)
       setView("output")
       setStatus(`running ${label}…`)
-      setLogSink((level, message) => setLogs((prev) => [...prev, { level, message }]))
+      setLogSink((level, message, opts) => {
+        pending.current.push({ level, message, transient: opts?.transient === true })
+      })
+      setStepSink((event) => {
+        stepRef.current = event
+      })
+      flushTimer.current = setInterval(flushPending, FLUSH_MS)
       try {
         const code = await run()
         setStatus(`${label} exited ${code}`)
@@ -109,10 +170,13 @@ function Home({
         setStatus(`${label} failed: ${String(error)}`)
       } finally {
         setLogSink(null)
+        setStepSink(null)
+        stopFlushing()
+        flushPending() // whatever arrived inside the last window
         setBusy(false)
       }
     },
-    [],
+    [flushPending, stopFlushing],
   )
 
   const runCommand = useCallback(
@@ -161,48 +225,68 @@ function Home({
     )
   }
 
+  // The root boxes of the output and home views carry explicit keys. Both are
+  // plain <box> elements in the same tree position, so without keys React
+  // reconciles one INTO the other on a view switch instead of remounting — and
+  // OpenTUI keeps stale layout from the old subtree: the pane's fixed-height
+  // box lived on as a phantom gap and the footer rows collapsed onto the rule.
+  // The keys force a real unmount/mount, which is also what the doctor and
+  // update views get for free by being different component types.
+
   if (view === "output") {
-    const tone: Record<LogLevel, string> = {
-      header: theme.blue,
-      ok: theme.green,
-      warn: theme.yellow,
-      error: theme.red,
-      info: theme.aqua,
-      raw: theme.fgMuted,
-    }
-    const glyph: Record<LogLevel, string> = {
-      header: "▸",
-      ok: "✓",
-      warn: "⚠",
-      error: "✗",
-      info: "ℹ",
-      raw: " ",
-    }
     // Keep the tail visible rather than the head — the interesting part of a
-    // command's output is almost always the end.
-    const shown = logs.slice(-24)
+    // command's output is almost always the end. Fixed count, not a slice that
+    // grows: a pane that changes height as output arrives drags the footer down
+    // the screen on every line, which reads as flicker.
+    const rows = paneRows()
+    const pinned = pinnedSection(output.lines, rows - 1)
+    // The pin costs a row, so the tail shrinks by one when it is showing.
+    const shown = output.lines.slice(pinned === null ? -rows : -(rows - 1))
+    const hidden = output.dropped + (output.lines.length - shown.length)
 
     return (
-      <box flexDirection="column" padding={1}>
+      <box key="output" flexDirection="column" padding={1}>
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.blue} attributes={BOLD}>
             {status}
           </text>
-          <text fg={theme.dim}>{logs.length > shown.length ? `+${logs.length - shown.length} above` : ""}</text>
+          <text fg={theme.dim}>{hidden > 0 ? `+${hidden} above` : ""}</text>
         </box>
 
-        <box flexDirection="column" marginTop={1}>
-          {shown.map((line, index) => (
-            <box key={index} flexDirection="row">
-              <text fg={tone[line.level]}>{` ${glyph[line.level]} `}</text>
-              <text fg={line.level === "header" ? theme.fg : theme.fgMuted}>{line.message}</text>
+        {/* Fixed height, not a box that grows with the output: a pane that
+            changes size drags the rule and footer down the screen on every
+            batch, which is most of what read as jumping. */}
+        <box flexDirection="column" marginTop={1} height={rows}>
+          {pinned !== null && (
+            <box flexDirection="row">
+              <text fg={theme.dim}>{" ▸ "}</text>
+              <text fg={theme.dim}>{pinned}</text>
             </box>
-          ))}
+          )}
+          {shown.map((line, index) => {
+            const { glyph, fg, text } = styleFor(line)
+            return (
+              <box key={index} flexDirection="row">
+                <text fg={fg}>{` ${glyph} `}</text>
+                <text fg={fg}>{text}</text>
+              </box>
+            )
+          })}
         </box>
 
         <box marginTop={1} flexDirection="column">
           <text fg={theme.dim}>{"─".repeat(62)}</text>
-          <text fg={theme.bgHard}>{busy ? "running…" : "⏎ / q — back to dotfiles"}</text>
+          <text fg={busy ? theme.orange : theme.bgHard}>
+            {busy
+              ? statusBar({
+                  label,
+                  tick,
+                  elapsedMs: Date.now() - startedAt.current,
+                  step,
+                  activity: currentActivity(output.lines),
+                })
+              : "⏎ / q — back to dotfiles"}
+          </text>
         </box>
       </box>
     )
@@ -250,7 +334,7 @@ function Home({
   )
 
   return (
-    <box flexDirection="column" padding={1}>
+    <box key="home" flexDirection="column" padding={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text fg={theme.blue} attributes={BOLD}>
           {`dotfiles ${VERSION}`}

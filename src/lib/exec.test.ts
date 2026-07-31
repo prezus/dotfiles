@@ -7,7 +7,7 @@
 // cargo on PATH — i.e. never on a dev machine, only on a fresh one.
 import { describe, expect, it } from "bun:test"
 import { Result } from "better-result"
-import { Env, extract, probe, run, runInteractiveCode } from "./exec.ts"
+import { Env, extract, LineAssembler, probe, run, runInteractiveCode } from "./exec.ts"
 import { setLogSink } from "./ui.ts"
 
 describe("Env.prepend", () => {
@@ -252,6 +252,118 @@ describe("child output streams into a log sink", () => {
     setLogSink(null) // sink removed before the call
     await runInteractiveCode(["/bin/sh", "-c", "echo straight-to-stdout"])
     expect(lines).toEqual([])
+  })
+
+  // Captured children get a PTY rather than a pipe. Homebrew, git and curl all
+  // check isatty and go quiet when it says no, so a pipe cost us exactly the
+  // progress output we most wanted to watch.
+  it("gives a captured child a tty, so it does not silence its own progress", async () => {
+    const { lines } = await capture(["/bin/sh", "-c", "test -t 1 && echo yes-tty || echo no-tty"])
+    expect(lines).toEqual(["yes-tty"])
+  })
+
+  it("keeps the child's stdin closed even though the pty is bidirectional", async () => {
+    // Attaching a pty overrides stdin:"ignore" and would otherwise hand the
+    // child a terminal nobody is typing at.
+    const { lines } = await capture(["/bin/sh", "-c", "test -t 0 && echo owns-stdin || echo no-stdin"])
+    expect(lines).toContain("no-stdin")
+  })
+
+  it("fails a prompting child fast instead of hanging the pane forever", async () => {
+    // A cask asking for an admin password under `brew bundle install` reaches
+    // here. With a readable pty it blocks forever, with the prompt invisible and
+    // no way to answer it. Every read must hit EOF.
+    const started = Date.now()
+    const { lines } = await capture(["/bin/sh", "-c", "read a; read b; read c; echo survived"])
+    expect(lines).toContain("survived")
+    expect(Date.now() - started).toBeLessThan(2000)
+  }, 5000)
+})
+
+describe("carriage-return progress", () => {
+  const captureFrames = async (cmd: string[]) => {
+    const frames: { message: string; transient: boolean }[] = []
+    setLogSink((_l, message, opts) => frames.push({ message, transient: opts?.transient === true }))
+    try {
+      await runInteractiveCode(cmd)
+      return frames
+    } finally {
+      setLogSink(null)
+    }
+  }
+
+  // A download bar redraws ONE line with \r and emits no newline until it is
+  // done. Splitting on "\n" produced nothing for the whole download and then a
+  // single smeared line, which is the bug this replaced.
+  it("reports a redrawn line as it is being drawn, not after", async () => {
+    const frames = await captureFrames([
+      "/bin/sh",
+      "-c",
+      'for i in 1 2 3 4 5; do printf "\\r####  %d0%%" $i; sleep 0.15; done; printf "\\ndone\\n"',
+    ])
+    expect(frames.filter((f) => f.transient).length).toBeGreaterThan(1)
+    expect(frames.some((f) => f.message.includes("####"))).toBe(true)
+  })
+
+  it("overwrites in place rather than concatenating the frames", async () => {
+    const frames = await captureFrames([
+      "/bin/sh",
+      "-c",
+      'printf "\\r####  10%%"; sleep 0.15; printf "\\r####  50%%\\ndone\\n"',
+    ])
+    const committed = frames.filter((f) => !f.transient).map((f) => f.message)
+    expect(committed).toEqual(["####  50%", "done"])
+    // The old pipe path produced "####  10%####  50%" here.
+    for (const frame of frames) expect(frame.message).not.toContain("10%####")
+  })
+
+  it("survives an escape sequence split across two reads", async () => {
+    // A PTY read can tear mid-escape; a per-chunk regex would leak the tail.
+    const frames = await captureFrames([
+      "/bin/sh",
+      "-c",
+      'printf "\\033[0;32mgr"; sleep 0.2; printf "een\\033[0m\\n"',
+    ])
+    expect(frames.filter((f) => !f.transient).map((f) => f.message)).toEqual(["green"])
+  })
+})
+
+describe("LineAssembler cursor semantics", () => {
+  const committed = (...chunks: string[]) => {
+    const lines: string[] = []
+    const assembler = new LineAssembler((text, transient) => {
+      if (!transient) lines.push(text)
+    })
+    for (const chunk of chunks) assembler.write(chunk)
+    assembler.end()
+    return lines
+  }
+
+  it("honours erase-to-end-of-line, so a shrinking frame drops its stale tail", () => {
+    // Without ESC[K this commits "done progress line" — the tail of the longer
+    // frame it overwrote.
+    expect(committed("long progress line\rdone\x1b[K\n")).toEqual(["done"])
+  })
+
+  it("honours erase-whole-line", () => {
+    expect(committed("garbage\x1b[2K\rdone\n")).toEqual(["done"])
+  })
+
+  it("treats cursor-column-absolute as a positioned overwrite", () => {
+    expect(committed("##########\x1b[1Gdone\n")).toEqual(["done######"])
+  })
+
+  it("expands tabs to the next tab stop instead of dropping them", () => {
+    expect(committed("a\tb\n")).toEqual(["a       b"])
+    expect(committed("12345678\tx\n")).toEqual(["12345678        x"])
+  })
+
+  it("applies a CSI sequence torn across two writes", () => {
+    expect(committed("stale\r\x1b[", "2Kdone\n")).toEqual(["done"])
+  })
+
+  it("still strips sequences it does not act on", () => {
+    expect(committed("\x1b[0;32mgreen\x1b[0m\n")).toEqual(["green"])
   })
 })
 

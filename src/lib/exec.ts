@@ -174,40 +174,162 @@ export async function probe(cmd: string[], opts: RunOptions = {}): Promise<RunRe
   })
 }
 
+/** How long a line must be mid-redraw before we show it as live progress. */
+const TRANSIENT_MS = 80
+
 /**
- * Run a command that owns the terminal — sudo prompts, chsh, brew bundle,
- * third-party `curl | bash` installers. Inside a TUI, wrap in withSuspendedUI().
+ * Just enough of a terminal to render progress correctly.
+ *
+ * Under a PTY the tools we drive redraw ONE line with carriage returns instead
+ * of emitting new ones — curl's download bar, git's "Receiving objects",
+ * Homebrew's spinner. Splitting on "\n" (what this used to do) meant a progress
+ * bar produced NOTHING until it finished and then arrived as a single smeared
+ * line, because the frames are separated by "\r" and there is no newline until
+ * the very end.
+ *
+ * So we model a cursor: "\r" rewinds to column 0 and subsequent text overwrites
+ * in place, exactly as a real terminal would. The line is reported as it is
+ * being redrawn (transient) and again once "\n" commits it.
+ *
+ * Escape sequences are consumed by a state machine rather than a regex because
+ * a sequence can be split across two PTY reads — a regex over one chunk would
+ * leak the tail of a torn escape into the pane as literal garbage.
  */
-/**
- * Read a stream line by line, emitting as the child produces output rather than
- * buffering to the end — so a long `brew install` shows progress live.
- */
-async function pump(stream: ReadableStream<Uint8Array>, onLine: (line: string) => void) {
-  const decoder = new TextDecoder()
-  let buffer = ""
-  for await (const chunk of stream) {
-    buffer += decoder.decode(chunk, { stream: true })
-    const lines = buffer.split("\n")
-    buffer = lines.pop() ?? ""
-    for (const line of lines) {
-      // Strip the child's own colour: the pane applies its own styling, and raw
-      // escapes would corrupt the layout.
-      const clean = line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "").replace(/\r/g, "").trimEnd()
-      if (clean !== "") onLine(clean)
+export class LineAssembler {
+  private line = ""
+  private col = 0
+  private state: "text" | "esc" | "csi" | "osc" | "charset" = "text"
+  private csi = ""
+  private lineStarted = Date.now()
+
+  constructor(private readonly onLine: (text: string, transient: boolean) => void) {}
+
+  write(chunk: string): void {
+    for (const ch of chunk) {
+      switch (this.state) {
+        case "esc":
+          this.state = ch === "[" ? "csi" : ch === "]" ? "osc" : /[()]/.test(ch) ? "charset" : "text"
+          continue
+        case "csi":
+          // Parameters and intermediates, then a final byte in @..~ ends it.
+          if (ch >= "@" && ch <= "~") {
+            this.applyCsi(ch)
+            this.state = "text"
+            this.csi = ""
+          } else this.csi += ch
+          continue
+        case "osc":
+          // Terminated by BEL, or by ST which starts with ESC.
+          if (ch === "\x07") this.state = "text"
+          else if (ch === "\x1b") this.state = "esc"
+          continue
+        case "charset":
+          this.state = "text"
+          continue
+        case "text":
+          break
+      }
+
+      if (ch === "\x1b") {
+        this.state = "esc"
+        this.csi = ""
+      } else if (ch === "\n") this.commit()
+      else if (ch === "\r") this.col = 0
+      else if (ch === "\b") this.col = Math.max(0, this.col - 1)
+      else if (ch === "\t") {
+        const next = (Math.floor(this.col / 8) + 1) * 8
+        while (this.line.length < next) this.line += " "
+        this.col = next
+      } else if (ch >= " ") {
+        this.line = this.line.slice(0, this.col) + ch + this.line.slice(this.col + 1)
+        this.col++
+      }
+    }
+
+    // Only surface a half-drawn line once it has been in progress long enough to
+    // be worth watching. Fast commands finish inside the window and emit purely
+    // committed lines, which keeps plain output identical to what it always was.
+    if (this.line !== "" && Date.now() - this.lineStarted >= TRANSIENT_MS) {
+      this.lineStarted = Date.now()
+      const text = this.line.trimEnd()
+      if (text !== "") this.onLine(text, true)
     }
   }
-  if (buffer.trim() !== "") onLine(buffer.trim())
+
+  /**
+   * The sequences that change what a line SAYS, not just how it looks.
+   *
+   * Erase-in-line is how a tool shortens a progress line: without it, a frame
+   * going from `Downloading foo.tar.gz 100.0%` to `###  30%` keeps the old tail
+   * and renders as `###  30%oo.tar.gz 100.0%`. Cursor-column (G) is the same
+   * idea as "\r" with an argument. Everything else is styling or cursor motion
+   * off this line, and staying ignored is the correct rendering.
+   */
+  private applyCsi(final: string): void {
+    const n = Number.parseInt(this.csi, 10) || 0
+    if (final === "K") {
+      if (n === 0) this.line = this.line.slice(0, this.col)
+      else if (n === 1)
+        this.line = " ".repeat(Math.min(this.col + 1, this.line.length)) + this.line.slice(this.col + 1)
+      else if (n === 2) this.line = ""
+    } else if (final === "G") this.col = Math.max(0, n - 1)
+  }
+
+  private commit(): void {
+    const text = this.line.trimEnd()
+    this.line = ""
+    this.col = 0
+    this.lineStarted = Date.now()
+    if (text !== "") this.onLine(text, false)
+  }
+
+  /** Flush a final line the child left without a trailing newline. */
+  end(): void {
+    this.commit()
+  }
 }
+
+/**
+ * Width to tell a captured child it has. Children wrap their own output, so a
+ * bad value here shows up as ragged wrapping in the pane rather than as an
+ * error. Mirrors the pane's padding and status glyph.
+ */
+const paneColumns = (): number => Math.max(40, (process.stdout.columns ?? 80) - 6)
+
+/**
+ * Run `cmd` with its stdin on /dev/null while leaving stdout on the PTY.
+ *
+ * A PTY is bidirectional, so attaching one silently overrides `stdin: "ignore"`
+ * and hands the child a readable terminal nobody is typing at. A child that then
+ * prompts — a cask asking for an admin password under `brew bundle install` —
+ * blocks forever, with the prompt invisible inside a pane that offers no way to
+ * answer it. Captured children are non-interactive by contract (that is exactly
+ * what `needsStdin` opts out of), so every read must hit EOF and fail fast, as
+ * it did when this was a pipe.
+ *
+ * The args go after `sh` positionally, so nothing here needs quoting.
+ */
+const withNullStdin = (cmd: string[]): string[] => [
+  "/bin/sh",
+  "-c",
+  'exec "$@" < /dev/null',
+  "sh",
+  ...cmd,
+]
 
 /**
  * Run a command that produces terminal output.
  *
  * When a log sink is installed (i.e. a UI is showing a pane) and the child does
- * not need stdin, its output is STREAMED into that sink instead of inheriting
- * the terminal. That is what keeps `brew`, `stow`, `rustup` and friends inside
- * the TUI rather than making the app drop out to run them.
+ * not need stdin, it is given a PTY and its output is STREAMED into that sink
+ * instead of inheriting the terminal. That is what keeps `brew`, `stow`,
+ * `rustup` and friends inside the TUI rather than making the app drop out to
+ * run them — and, because a PTY still satisfies `isatty`, without costing us
+ * the progress output those tools only produce for a terminal.
  *
  * Children that need the user's keyboard set `needsStdin` and always inherit.
+ * A PTY would satisfy them too, but only if we also emulated the rendering
+ * side, and $EDITOR in a pane is a much larger project than this.
  */
 export async function runInteractive(
   cmd: string[],
@@ -240,13 +362,38 @@ export async function runInteractive(
     })
   }
 
+  const decoder = new TextDecoder()
+  // "raw", not "info": this is the child's own output, not a status message from
+  // us. Tagging it "info" stamped a bullet on every line, which flattened
+  // brew's aligned tables and `==>` sections into an undifferentiated wall.
+  // The pane decides how to draw it — see the classifier in home.tsx.
+  const assembler = new LineAssembler((text, transient) =>
+    sink?.("raw", text, transient ? { transient: true } : undefined),
+  )
+
+  // The PTY's own EOF, which is what tells us the output is complete. The
+  // subprocess can be reaped before the last read lands, so exit alone is not
+  // enough — waiting on it would truncate the final lines.
+  let ptyClosed: () => void = () => {}
+  const closed = new Promise<void>((resolve) => {
+    ptyClosed = resolve
+  })
+
   const spawned = Result.try(() =>
-    Bun.spawn([bin, ...args], {
+    Bun.spawn(withNullStdin([bin, ...args]), {
       cwd: opts.cwd,
       env: { ...(opts.env ?? env).toObject(), ...opts.extraEnv },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+      // A pseudo-terminal, not a pipe. Homebrew gates its output on
+      // `$stdout.tty?` — through a pipe it passes `--silent` to curl
+      // (utils/curl.rb) and drops the "Downloading …" line entirely, so the
+      // slowest part of `brew upgrade` reported nothing at all. Under a PTY it
+      // believes it is interactive and talks, while we still read every byte.
+      terminal: {
+        cols: paneColumns(),
+        rows: 24,
+        data: (_terminal, bytes) => assembler.write(decoder.decode(bytes, { stream: true })),
+        exit: () => ptyClosed(),
+      },
     }),
   )
   if (Result.isError(spawned)) {
@@ -254,12 +401,18 @@ export async function runInteractive(
   }
   const proc = spawned.value
 
-  const emit = (line: string) => sink?.("info", line)
-  const [, , code] = await Promise.all([
-    pump(proc.stdout as ReadableStream<Uint8Array>, emit),
-    pump(proc.stderr as ReadableStream<Uint8Array>, emit),
-    proc.exited,
-  ])
+  // Note the PTY `exit` callback reports stream lifecycle, NOT the child's
+  // status — the real exit code only ever comes from `proc.exited`, or every
+  // failed brew command would silently report success.
+  const code = await proc.exited
+  // The PTY's exit callback IS its EOF, so this normally resolves instantly;
+  // the timeout is a safety net, not latency. A fixed 50ms nap here used to
+  // truncate the tail of `brew upgrade` — the summary of what was upgraded —
+  // whenever the last read landed late.
+  await Promise.race([closed, Bun.sleep(1000)])
+  assembler.write(decoder.decode()) // flush any multi-byte tail the stream decoder buffered
+  assembler.end()
+  proc.terminal?.close()
   return Result.ok(code)
 }
 

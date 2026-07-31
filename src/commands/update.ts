@@ -8,7 +8,7 @@ import { DOTFILES_DIR, HOME, SKILLS_REPO } from "../lib/env.ts"
 import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import { isDirectory, pathExists } from "../lib/fs.ts"
 import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
-import { isInteractive, printHeader, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
+import { getStepSink, isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 import { skills } from "./skills.ts"
 import { stow } from "./stow.ts"
 
@@ -226,7 +226,10 @@ export async function update(argv: string[] = []): Promise<number> {
   }
 
   const summary = await runSteps(steps, (report, index, total) => {
-    if (report.state === "running") printRaw(`\n[${index + 1}/${total}] ${report.step.title}`)
+    // Structured progress for the TUI's status bar; the printed lines below are
+    // for the plain CLI (and become single pane rows when a sink is installed).
+    getStepSink()?.({ index, total, title: report.step.title, state: report.state })
+    if (report.state === "running") printHeader(`[${index + 1}/${total}] ${report.step.title}`)
     else if (report.state === "warn") printWarning(`${report.step.title} incomplete`)
   })
 
