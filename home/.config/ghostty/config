@@ -1,13 +1,18 @@
 theme = Gruvbox Dark
 
 font-size = 14
-#font-family = "Victor Mono"
-font-family-bold = "Monaspace Xenon Var"
-font-family-italic = "Monaspace Radon Var"
+# Static Monaspace, not the "… Var" build: every named instance in the variable
+# fonts is prefixed "ExtraLight" ("ExtraLight Regular", "ExtraLight Bold"), so
+# the font-style lines below resolve against the statics and nothing else.
+# Verified with `ghostty +list-fonts`. Mirrors zed/settings.json — Xenon for UI,
+# Neon for the buffer.
+font-family = "Monaspace Neon"
+font-family-bold = "Monaspace Xenon"
+font-family-italic = "Monaspace Radon"
 #font-family-bold-italic = "Operator Mono SSm Lig"
 
 font-style = Regular
-font-style-italic = Regular Italic
+font-style-italic = Italic
 font-style-bold = Bold
 font-style-bold-italic = Bold Italic
 
