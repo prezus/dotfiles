@@ -196,9 +196,15 @@ cask "discord"
 cask "dotnet-sdk"
 cask "electron-fiddle"
 cask "font-jetbrains-mono"
+# Monaspace ships as four separate casks, one per build of the same 1.400 release.
+# Static OTFs — "Monaspace Neon", "Monaspace Xenon", …  (zed/settings.json)
 cask "font-monaspace"
-# The variable ("… Var") faces are a SEPARATE cask; ghostty/config asks for them.
+# Variable — "Monaspace Xenon Var", "Monaspace Radon Var"  (ghostty/config)
 cask "font-monaspace-var"
+# Nerd Font patched, for anything that renders devicons/powerline glyphs
+cask "font-monaspace-nf"
+# Frozen — static instances of the variable axes
+cask "font-monaspace-frozen"
 cask "goreleaser/tap/goreleaser"
 cask "headlamp"
 cask "iina"
