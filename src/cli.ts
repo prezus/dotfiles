@@ -11,6 +11,7 @@
 import { bunGlobals } from "./commands/bunglobals.ts"
 import { doctor } from "./commands/doctor/index.ts"
 import { edit } from "./commands/edit.ts"
+import { homebrew } from "./commands/homebrew.ts"
 import { init } from "./commands/init.ts"
 import { checkPackages, retryFailed } from "./commands/packages.ts"
 import { fish } from "./commands/fish.ts"
@@ -49,6 +50,14 @@ const COMMANDS: Command[] = [
     name: "doctor",
     description: "Health check (brew, stow, fish, skills links, 1Password, signing)",
     run: (args) => doctor(args),
+  },
+  {
+    name: "brew",
+    description: "Install Homebrew + everything in packages/bundle",
+    help:
+      "Install Homebrew, then `brew bundle` packages/bundle — init's brew steps alone.\n" +
+      "Run it from a shell to stay out of the dashboard entirely.",
+    run: () => homebrew(),
   },
   {
     name: "stow",
@@ -122,9 +131,13 @@ function printCommands(): void {
 
 function printHelp(): void {
   const width = Math.max(...COMMANDS.map((c) => c.name.length)) + 2
-  const lines = COMMANDS.map(
-    (c) => `  ${BOLD}${c.name}${RESET}${" ".repeat(width - c.name.length)}${c.help ?? c.description}`,
-  )
+  const lines = COMMANDS.map((c) => {
+    // A `help` may run to a second line; align its continuation under the first
+    // rather than making each entry hard-code the column it happens to land in.
+    const indent = " ".repeat(width + 2)
+    const body = (c.help ?? c.description).split("\n").join(`\n${indent}`)
+    return `  ${BOLD}${c.name}${RESET}${" ".repeat(width - c.name.length)}${body}`
+  })
   process.stdout.write(
     `${BOLD}dotfiles${RESET} — dotfiles management\n\n${lines.join("\n")}\n\n` +
       `  (--version for version)\n`,

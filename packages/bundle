@@ -19,6 +19,7 @@ tap "rishikanthc/scriberr", trusted: true
 tap "siderolabs/tap", trusted: { formulae: ["omnictl"] }
 tap "steipete/tap", trusted: true
 tap "supabase/tap"
+tap "terraform-linters/tap", trusted: true
 tap "tnk-studio/tools", trusted: true
 tap "vladimirvivien/oss-tools", trusted: true
 tap "zackriya-solutions/meetily", trusted: true
@@ -53,7 +54,8 @@ brew "fd"
 brew "fish"
 brew "fzf"
 brew "gh"
-brew "ghidra", link: false
+# Was `link: false` while cask "ghidra" owned the app; that cask no longer exists.
+brew "ghidra"
 brew "git"
 brew "git-delta"
 brew "gitleaks"
@@ -99,7 +101,8 @@ brew "opentofu"
 brew "picocom"
 brew "pipx"
 brew "pnpm"
-brew "powershell", link: false
+# Was `link: false` while cask "powershell" owned the app; that cask no longer exists.
+brew "powershell"
 brew "procs"
 brew "putty"
 brew "python@3.13"
@@ -119,7 +122,6 @@ brew "stern"
 brew "stow"
 brew "tealdeer"
 brew "telnet"
-brew "tflint"
 brew "tmux"
 brew "tokei"
 brew "trivy"
@@ -194,7 +196,6 @@ cask "dotnet-sdk"
 cask "electron-fiddle"
 cask "font-jetbrains-mono"
 cask "font-monaspace"
-cask "ghidra"
 cask "goreleaser/tap/goreleaser"
 cask "headlamp"
 cask "inkscape"
@@ -207,12 +208,13 @@ cask "obs"
 cask "opencode-desktop"
 cask "orbstack"
 cask "pixelorama"
-cask "powershell"
 cask "qmk-toolbox"
 cask "scroll-reverser"
 cask "stats"
 cask "t3-code"
 cask "temurin"
+# tflint left homebrew-core and is now a cask in the vendor's own tap.
+cask "terraform-linters/tap/tflint"
 cask "twingate"
 cask "visual-studio-code"
 cask "wezterm"

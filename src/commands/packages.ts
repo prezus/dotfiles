@@ -7,16 +7,22 @@
 import { join } from "node:path"
 import { readBundle } from "../lib/brew.ts"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, runInteractiveCode } from "../lib/exec.ts"
+import { commandExists, runInteractiveCode, type RunOptions } from "../lib/exec.ts"
 import type { StepOutcome } from "../lib/steps.ts"
+import { warmSudo, type SudoSession } from "../lib/sudo.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 export type PackageRuntime = {
   commandExists: (bin: string) => Promise<boolean>
-  runInteractiveCode: (command: string[]) => Promise<number>
+  runInteractiveCode: (command: string[], opts?: RunOptions) => Promise<number>
+  warmSudo: (reason: string) => Promise<SudoSession>
 }
 
-const defaultRuntime: PackageRuntime = { commandExists, runInteractiveCode }
+const defaultRuntime: PackageRuntime = {
+  commandExists,
+  runInteractiveCode,
+  warmSudo: (reason) => warmSudo(reason),
+}
 
 export type PackageOptions = {
   bundlePath?: string
@@ -50,7 +56,7 @@ export async function checkPackages(options: PackageOptions = {}): Promise<numbe
   printInfo(`Checking packages/bundle — ${entries.length} entries`)
   const code = await runtime.runInteractiveCode(bundleCommand("check", bundlePath))
   if (code === 0) printSuccess("The Brewfile's dependencies are satisfied.")
-  else printWarning("Some Brewfile dependencies are missing (install with: dotfiles init)")
+  else printWarning("Some Brewfile dependencies are missing (install with: dotfiles brew)")
   return code
 }
 
@@ -60,6 +66,22 @@ export async function checkPackages(options: PackageOptions = {}): Promise<numbe
  * The check keeps an already-configured machine fast and read-only. The install
  * deliberately remains one Bundle operation: that is what installs Go/Cargo
  * entries and honors directive options rather than silently dropping them.
+ *
+ * The two passes are NOT run the same way, and the difference is the whole
+ * point of this function:
+ *
+ *   check   — reads only, never escalates, so it streams into the pane.
+ *   install — pours casks, and a cask with a `pkg` payload calls `sudo`. sudo
+ *             reads the password from the controlling terminal, so under
+ *             capture the prompt landed in the pane's PTY where it was both
+ *             invisible and unanswerable, and the install hung until sudo timed
+ *             out. `needsStdin` gives this pass the REAL terminal (suspending
+ *             any UI for its duration), which is the only arrangement where the
+ *             password can be typed at all.
+ *
+ * Losing the pane for the install pass is the cost, and it is the right trade:
+ * brew's own output goes straight to the screen instead, and a fresh machine
+ * finishes unattended rather than stalling on a prompt nobody could see.
  */
 export async function installPackages(options: PackageOptions = {}): Promise<StepOutcome> {
   const bundlePath = bundlePathFor(options)
@@ -72,8 +94,25 @@ export async function installPackages(options: PackageOptions = {}): Promise<Ste
     return { ok: true, detail: `${entries.length} package entries already satisfied` }
   }
 
-  const install = await runtime.runInteractiveCode(bundleCommand("install", bundlePath))
-  if (install === 0) return { ok: true, detail: `installed ${entries.length} package entries` }
+  // Ask once, before the pour, rather than letting the tenth cask in ask forty
+  // minutes from now — see lib/sudo.ts. Formula-only bundles skip this entirely.
+  const casks = entries.filter((entry) => entry.kind === "cask").length
+  const sudo =
+    casks > 0
+      ? await runtime.warmSudo(
+          `Homebrew is about to install ${casks} cask(s); some need administrator rights.`,
+        )
+      : null
+
+  printInfo("Running brew bundle install on the terminal (casks may ask for your password)")
+  try {
+    const install = await runtime.runInteractiveCode(bundleCommand("install", bundlePath), {
+      needsStdin: true,
+    })
+    if (install === 0) return { ok: true, detail: `installed ${entries.length} package entries` }
+  } finally {
+    sudo?.release()
+  }
 
   printWarning("Homebrew Bundle reported incomplete installs — retry with: dotfiles retry-failed")
   return { ok: false, detail: "brew bundle install failed" }

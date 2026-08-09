@@ -53,6 +53,16 @@ git -C ~/Projects/skills remote set-url origin git@github.com:prezus/skills.git
 After `init`, `dotfiles` is on your PATH (via the stowed shell config), so later you can
 just run `dotfiles update` / `dotfiles doctor` from anywhere.
 
+**If the Homebrew step fails**, run the brew half on its own:
+
+```sh
+./dotfiles brew                        # install Homebrew, then brew bundle packages/bundle
+```
+
+Casks with a `pkg` payload ask for your admin password, so this step needs a terminal you
+can type at. Run from a shell it has one; `init` inside the dashboard hands the screen over
+for the same reason, and hands it back when brew is done.
+
 ## Packages
 
 `packages/bundle` is a `brew bundle dump` of this machine (taps, formulae, casks) plus a

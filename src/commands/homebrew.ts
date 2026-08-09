@@ -1,8 +1,8 @@
-// Homebrew install + activation.
+// Homebrew install + activation, and the `dotfiles brew` subcommand.
 //
-// Not a dispatched subcommand — it is step 1 of `init`, and the step the whole
-// sequencing problem revolves around: steps 2-10 all need `brew` on PATH, and on
-// a fresh machine it did not exist when the process started.
+// `activateHomebrew`/`ensureHomebrew` are step 1 of `init`, and the step the
+// whole sequencing problem revolves around: steps 2-10 all need `brew` on PATH,
+// and on a fresh machine it did not exist when the process started.
 //
 // Bash solved this with `eval "$(brew shellenv)"`, which works because eval runs
 // arbitrary shell. We cannot, and it turns out parsing shellenv is NOT enough:
@@ -19,7 +19,8 @@
 import { join } from "node:path"
 import { commandExists, env, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { pathExists } from "../lib/fs.ts"
-import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { printError, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { installPackages } from "./packages.ts"
 
 /** Apple Silicon first, then Intel — the only two prefixes Homebrew uses. */
 const CANDIDATE_PREFIXES = ["/opt/homebrew", "/usr/local"]
@@ -88,4 +89,29 @@ export async function ensureHomebrew(): Promise<boolean> {
   }
   printSuccess(`Homebrew installed (${prefix})`)
   return true
+}
+
+/**
+ * `dotfiles brew` — the Homebrew half of `init`, on its own.
+ *
+ * This is the escape hatch for the failure mode that produced it: the brew
+ * steps are the ones that need a password, and when they misbehave the last
+ * thing you want is to be inside a full-screen app while they do. Run from a
+ * shell there is no renderer and no log sink, so every child inherits the
+ * terminal directly — brew's output is brew's output, and a prompt is a prompt.
+ *
+ * It is also the right command for the ordinary case of "packages changed":
+ * nothing here depends on the other nine init steps.
+ */
+export async function homebrew(): Promise<number> {
+  printHeader("Homebrew")
+  if (!(await ensureHomebrew())) return 1
+
+  const outcome = await installPackages()
+  if (outcome.ok) {
+    printSuccess(outcome.detail ?? "packages installed")
+    return 0
+  }
+  printError(outcome.detail ?? "package installation failed")
+  return 1
 }

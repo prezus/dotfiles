@@ -95,6 +95,8 @@ dotfiles update          Multi-select: repos / brew / language tools / re-stow /
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
                          warning in place); plain lines when piped or --plain.
                          Exits 1 on a critical failure, so it works as a gate.
+dotfiles brew            Homebrew + `brew bundle` packages/bundle — init's brew steps
+                         alone, and the escape hatch when they fail inside the dashboard.
 dotfiles stow            Re-symlink home/ → $HOME. --dry-run previews, --adopt on an
                          existing machine. Conflicts are named before stow is run.
 dotfiles ssh             Write the 1Password-agent + legacy-compat block into ~/.ssh/config
@@ -203,6 +205,15 @@ sequences when piped.
 - **No `brew "fisher"`.** fisher self-installs as a fish *function* and is what actually
   manages `fish_plugins`; a brew copy is redundant and can shadow it. `dotfiles doctor`
   checks fisher via `fish -c 'type -q fisher'`, not via brew.
+- **`brew bundle install` runs on the REAL terminal, not in the output pane.** sudo reads
+  its password from the *controlling* terminal, and a captured child's controlling terminal
+  is the PTY `exec.ts` opened for the pane — so a cask with a `pkg` payload printed
+  "Password:" somewhere nobody could see or answer, and the install hung until sudo timed
+  out. It surfaced as a bare "Homebrew failed". The install pass therefore sets
+  `needsStdin` (`src/commands/packages.ts`); the read-only `check` pass does not, since it
+  never escalates. `src/lib/sudo.ts` warms the ticket first so the one prompt arrives up
+  front with a reason, and keeps it alive — macOS expires it after five minutes, which is
+  far shorter than a fresh bundle install. Losing the pane for that pass is the trade.
 - **Package drift has two directions**, and they're checked in two different places:
   - *bundle → not installed*: `dotfiles check-packages` (a thin `brew bundle check`). It
     walks the Brewfile and never enumerates the system, so it sees only this direction.
