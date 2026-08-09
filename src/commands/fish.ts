@@ -3,10 +3,33 @@
 // Three distinct jobs, two of which need the real terminal (sudo, chsh). Those
 // children are marked needsStdin, and exec.ts suspends any mounted UI around
 // them — the command itself does not need to know a UI exists.
+import { userInfo } from "node:os"
 import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR } from "../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../lib/exec.ts"
 import { confirm, printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+
+/** The shell out of `dscl . -read /Users/<u> UserShell`. Exported to be tested. */
+export function parseLoginShell(dsclOutput: string): string | null {
+  const m = /^UserShell:\s*(\S+)\s*$/m.exec(dsclOutput)
+  return m?.[1] ?? null
+}
+
+/**
+ * The login shell as the SYSTEM records it.
+ *
+ * Deliberately not `$SHELL`. That is the shell of whatever session we were
+ * launched from, and `chsh` only affects sessions started after it runs — so a
+ * terminal opened before the switch reports the old shell for as long as it
+ * lives. Reading it meant this command offered to change a shell it had already
+ * changed, on every run, and never once said "already fish" on the machine
+ * where it had just succeeded.
+ */
+async function loginShell(): Promise<string | null> {
+  const res = await probe(["/usr/bin/dscl", ".", "-read", `/Users/${userInfo().username}`, "UserShell"])
+  // Fall back to the old, weaker signal rather than re-running chsh blindly.
+  return res.ok ? parseLoginShell(res.stdout) : (process.env.SHELL ?? null)
+}
 
 /** Add fish to /etc/shells so chsh will accept it. Needs sudo. */
 async function registerShell(fishPath: string): Promise<void> {
@@ -49,18 +72,24 @@ export async function fish(): Promise<number> {
 
   await registerShell(fishPath)
 
-  if (process.env.SHELL !== fishPath) {
+  const current = await loginShell()
+  if (current !== fishPath) {
     // Changing the login shell is not something to do on an unattended run just
     // because nobody was there to say no. bash's `read` would have taken EOF as
     // the default and gone ahead; require a real answer instead.
     if (!process.stdin.isTTY) {
-      printInfo(`login shell is ${process.env.SHELL} — run interactively to switch to fish`)
+      printInfo(`login shell is ${current ?? "unknown"} — run interactively to switch to fish`)
     } else if (await confirm("Set fish as your default shell?", true)) {
       // chsh prompts for a password — it must own the terminal.
       const code = await runInteractiveCode(["chsh", "-s", fishPath], { needsStdin: true })
       if (code === 0) printSuccess("Default shell → fish (log out/in to apply)")
       else printWarning("chsh failed")
     }
+  } else if (process.env.SHELL !== fishPath) {
+    // The switch has already happened; THIS session simply predates it. Saying
+    // "already the default shell" here reads as a contradiction of the zsh
+    // prompt the user is looking at, so name the reason instead.
+    printSuccess(`fish is already the login shell — this session predates the change (${process.env.SHELL})`)
   } else {
     printSuccess("fish is already the default shell")
   }

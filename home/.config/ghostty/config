@@ -2,7 +2,7 @@ theme = Gruvbox Dark
 
 font-size = 14
 #font-family = "Victor Mono"
-font-family-bold = "Monaspace Xeon Var"
+font-family-bold = "Monaspace Xenon Var"
 font-family-italic = "Monaspace Radon Var"
 #font-family-bold-italic = "Operator Mono SSm Lig"
 
@@ -32,5 +32,7 @@ clipboard-write = allow
 
 keybind = shift+enter=text:\n
 
-shell-integration = zsh
+# Must match the login shell `dotfiles fish` sets, or Ghostty injects the wrong
+# integration. `detect` would also work; pinned because fish is not a guess here.
+shell-integration = fish
 quit-after-last-window-closed = true
