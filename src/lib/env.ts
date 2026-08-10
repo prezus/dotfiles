@@ -21,6 +21,11 @@ export const HOME_DIR = join(DOTFILES_DIR, "home")
 
 export const LEGACY_SCRIPT = join(DOTFILES_DIR, "legacy", "dotfiles.bash")
 
+/** espup's install root. Its subdirectories are version-stamped and move on
+ *  `espup update`, so never pin a path under here — resolve by glob. The shells
+ *  do the same in conf.d/esp32.fish and .config/esp32/env.sh. */
+export const ESP_ROOT = join(HOME, ".rustup", "toolchains", "esp")
+
 // Skills live in a separate repo; dotfiles installs FROM it (see INSTALL.md).
 export const SKILLS_REPO = process.env.SKILLS_REPO ?? join(HOME, "Projects", "skills")
 export const SKILLS_SRC = process.env.SKILLS_SRC ?? join(SKILLS_REPO, "skills")

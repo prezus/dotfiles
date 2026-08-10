@@ -48,6 +48,7 @@ dotfiles/
 | Shell env var / PATH (fish) | `home/.config/fish/conf.d/env.fish` / `paths.fish` |
 | Fish plugin | `home/.config/fish/fish_plugins` (fisher) |
 | Zsh config | `home/.zshrc` (being migrated to fish) |
+| ESP32 / Xtensa toolchain env | `home/.config/fish/conf.d/esp32.fish` + `home/.config/esp32/env.sh` (espup installs it but wires nothing — nobody sources `~/export-esp.sh`) |
 | Prompt | `home/.config/starship/starship.toml` (both shells) |
 | Git identity / signing | `home/.gitconfig` |
 | SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
@@ -189,9 +190,13 @@ sequences when piped.
   whether the premise was ever true.
   **When something appears to solve a problem you have never had, run `git log -S '<string>'`
   and find out when it arrived before assuming it earns its place.** Candidates that came in
-  with the adaptation and have never been re-justified: the `FISH_TOOL_COMPLETIONS` list, the
-  legacy-host SSH stanza (`ssh-rsa`, `diffie-hellman-group1-sha1` for `192.168.*`), and the
-  ESP/Xtensa Rust toolchain.
+  with the adaptation and have never been re-justified: the `FISH_TOOL_COMPLETIONS` list and
+  the legacy-host SSH stanza (`ssh-rsa`, `diffie-hellman-group1-sha1` for `192.168.*`).
+  The ESP/Xtensa Rust toolchain used to be on that list and has now been through exactly this
+  exercise: it turned out to be genuinely used (`~/Projects/esp32-genset`) but never actually
+  wired — `.zshrc` sourced a `~/.config/esp32/env.sh` that had never existed, so the `[ -f ]`
+  guard swallowed it silently for months. Re-justifying a thing can end in wiring it up
+  properly rather than deleting it; the point is that somebody checked.
 - OrbStack re-adds its own `~/.ssh/config` Include and completions — don't fight it. Stow
   no longer needs to: a path that blocks stow but whose bytes already match ours is
   **reclaimed** (the link is taken over, content unchanged). Our completions come from

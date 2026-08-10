@@ -9,10 +9,36 @@ import {
   countCriticalIssues,
   doctorExitCode,
   globToRegExp,
+  newestEspVersionDir,
   normalizeBundle,
   runChecks,
   type CompletedCheck,
 } from "./checks.ts"
+
+describe("newestEspVersionDir", () => {
+  // The rule is "lexicographically last" ONLY because that is what a fish glob
+  // subscript [-1] and the shell for-loops resolve to. Doctor must agree with
+  // the shells it is checking, or it reports drift that does not exist.
+  it("returns null when nothing is installed", () => {
+    expect(newestEspVersionDir([])).toBe(null)
+  })
+
+  it("takes the single version dir", () => {
+    expect(newestEspVersionDir(["esp-15.2.0_20250920"])).toBe("esp-15.2.0_20250920")
+  })
+
+  it("takes the last one alphabetically, matching the shell glob", () => {
+    expect(newestEspVersionDir(["esp-15.2.0_20250920", "esp-16.0.0_20260101"])).toBe("esp-16.0.0_20260101")
+  })
+
+  it("ignores entries that are not version dirs", () => {
+    expect(newestEspVersionDir([".DS_Store", "README", "esp-15.2.0_20250920"])).toBe("esp-15.2.0_20250920")
+  })
+
+  it("returns null when the directory holds no version dirs at all", () => {
+    expect(newestEspVersionDir([".DS_Store", "README"])).toBe(null)
+  })
+})
 
 describe("normalizeBundle", () => {
   it("keeps only tracked directive kinds", () => {

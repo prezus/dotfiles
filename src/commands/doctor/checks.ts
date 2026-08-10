@@ -12,9 +12,11 @@
 // Keeping the data layer renderer-free is what lets a breaking OpenTUI bump
 // touch one directory instead of the whole command.
 import { Result } from "better-result"
+import { readdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
   DOTFILES_DIR,
+  ESP_ROOT,
   FISH_TOOL_COMPLETIONS,
   HOME,
   HOME_DIR,
@@ -650,6 +652,85 @@ const brokenSymlinksCheck: Check = {
   },
 }
 
+/**
+ * Pick the version-stamped toolchain directory the shells would pick.
+ *
+ * MUST stay lexicographically last, because that is exactly what a fish glob
+ * subscript `[-1]` and the shell `for` loops resolve to. A cleverer rule here
+ * (semver, or the trailing _YYYYMMDD stamp) would be *more* correct in the
+ * abstract and would make doctor disagree with the shell it is checking,
+ * reporting a phantom "not on PATH" against a dir the shell never chose.
+ */
+export function newestEspVersionDir(names: string[]): string | null {
+  const versions = names.filter((n) => n.startsWith("esp-")).sort()
+  return versions.at(-1) ?? null
+}
+
+async function espGccBin(): Promise<{ bin: string | null; versions: number }> {
+  const root = join(ESP_ROOT, "xtensa-esp-elf")
+  let entries: string[]
+  try {
+    entries = await readdir(root)
+  } catch {
+    return { bin: null, versions: 0 }
+  }
+  const newest = newestEspVersionDir(entries)
+  if (newest === null) return { bin: null, versions: 0 }
+  const bin = join(root, newest, "xtensa-esp-elf", "bin")
+  return {
+    bin: (await isDirectory(bin)) ? bin : null,
+    versions: entries.filter((n) => n.startsWith("esp-")).length,
+  }
+}
+
+/**
+ * espup installs the Xtensa toolchain but wires nothing — it writes
+ * ~/export-esp.sh and expects you to source it. We re-derive those vars in
+ * conf.d/esp32.fish and .config/esp32/env.sh instead, from a glob, so an
+ * `espup update` that moves the version dir cannot strand us.
+ *
+ * This check is what makes the next such break visible. Without it the symptom
+ * surfaces as `cc-rs: failed to find tool "xtensa-esp32s3-elf-gcc"` inside an
+ * unrelated project's build, which reads as a project bug, not an env one.
+ */
+const espToolchainCheck: Check = {
+  id: "esp-toolchain",
+  section: "Environment",
+  label: "ESP toolchain",
+  run: async () => {
+    // Not installed is not a problem — most machines have no reason to have it.
+    if (!(await isDirectory(ESP_ROOT))) return { status: "info", message: "" }
+
+    const { bin, versions } = await espGccBin()
+    if (bin === null)
+      return {
+        status: "warn",
+        message: "ESP toolchain — installed, but no xtensa-esp-elf/*/xtensa-esp-elf/bin (rerun espup install)",
+      }
+
+    if (!(process.env.PATH ?? "").split(":").includes(bin))
+      return {
+        status: "warn",
+        message: `ESP toolchain not on PATH — ${bin} (open a new shell after stow)`,
+      }
+
+    const message = `ESP toolchain — ${bin}`
+    // More than one version dir is the one case where "newest" is a guess.
+    if (versions > 1)
+      return {
+        status: "ok",
+        message,
+        extra: [
+          {
+            kind: "warn",
+            text: `  ↳ ${versions} version dirs under xtensa-esp-elf/ — the shells take the last one alphabetically`,
+          },
+        ],
+      }
+    return { status: "ok", message }
+  },
+}
+
 // ─── registry ───────────────────────────────────────────────────────
 
 export const CHECKS: Check[] = [
@@ -675,6 +756,7 @@ export const CHECKS: Check[] = [
   gitSigningCheck,
   untrackedPackagesCheck,
   pathCheck,
+  espToolchainCheck,
   stowTreeCheck,
   brokenSymlinksCheck,
 ]

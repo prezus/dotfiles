@@ -15,6 +15,7 @@ fish/
 ├── conf.d/                 # Auto-sourced, alphabetical order
 │   ├── env.fish            # LANG, EDITOR, MANPATH, JAVA_HOME, ghostty TERM
 │   ├── paths.fish          # PATH via `fish_add_path --move` (brew first, .bun last)
+│   ├── esp32.fish          # Xtensa toolchain PATH + LIBCLANG_PATH (globbed, session-only)
 │   ├── fzf.fish            # FZF_DEFAULT_COMMAND + `fzf --fish | source`
 │   ├── zoxide.fish         # `zoxide init fish | source`
 │   ├── starship.fish       # prompt (same starship.toml as zsh)
@@ -34,6 +35,7 @@ fish/
 | Add env var | `conf.d/env.fish` (`set -gx NAME value`) |
 | Add to PATH | `conf.d/paths.fish` (`fish_add_path`; `--move --append` for low priority) |
 | Add a tool init (`foo init fish`) | new `conf.d/<tool>.fish`, gated `if type -q foo` |
+| Add a PATH that moves on upgrade | own `conf.d/` fragment with a glob + `fish_add_path -gP` (session-only) — see `esp32.fish` |
 | Add a fish plugin | `fisher install <owner/repo>` → updates `fish_plugins` |
 | Add a completion we author | `completions/<cmd>.fish` + a `!` re-include in root `.gitignore` |
 | Change the prompt | `../starship/starship.toml` (not here — shared with zsh) |
@@ -48,6 +50,11 @@ fish/
   missing tool doesn't error on startup.
 - **PATH via `fish_add_path`**, never manual `set PATH`. Use `--move` because
   `fish_user_paths` is universal and won't reorder an existing entry otherwise.
+  **Exception — version-stamped paths** (`esp32.fish`): use `fish_add_path -gP`, which
+  prepends to `$PATH` for this session only. A universal entry would outlive the upgrade
+  that moved the directory and sit there dangling. Note `-gP`, not `-g`: plain `-g` copies
+  all of `fish_user_paths` into a global that *shadows* the universal one, so `paths.fish`'s
+  later `--move` calls would silently write to the shadow.
 - **`set -gx`** for exported globals.
 - **Fish has autosuggestions + syntax highlighting natively** — don't add zsh-style
   plugins for those.
