@@ -20,11 +20,8 @@
   },
   "vim_mode": false,
   "helix_mode": false,
-  "disable_ai": false,
+  "disable_ai": true,
   "show_edit_predictions": false,
-  "features": {
-    "edit_prediction_provider": "none",
-  },
 
   // External Agent Servers (OpenCode, Claude Code, etc.)
   "agent_servers": {
@@ -79,6 +76,7 @@
 
   // Security: Disable edit predictions for sensitive files
   "edit_predictions": {
+    "provider": "none",
     "disabled_globs": [
       "**/.env*",
       "**/*.pem",
@@ -111,11 +109,7 @@
   },
   "ui_font_family": "Monaspace Xenon",
   "buffer_font_family": "Monaspace Neon",
-  "theme": {
-    "mode": "dark",
-    "light": "One Light",
-    "dark": "Catppuccin Mocha",
-  },
+  "theme": "Catppuccin Mocha",
 
   "experimental.theme_overrides": {
     "syntax": {
