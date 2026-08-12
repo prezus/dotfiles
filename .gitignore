@@ -49,6 +49,8 @@ home/.config/**/local.*
 node_modules/
 .npm/
 *.log
+# Installer-managed binary (currently >100 MB; GitHub rejects files over 100 MB)
+home/.local/bin/plannotator
 
 # ─── Editors / IDEs ─────────────────────────────────────────────────
 .idea/
