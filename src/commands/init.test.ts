@@ -7,7 +7,7 @@ const ids = () => initSteps().map((s) => s.id)
 const indexOf = (id: string) => ids().indexOf(id)
 
 describe("init step order", () => {
-  it("has the ten steps the bash had", () => {
+  it("has every machine setup step", () => {
     expect(ids()).toEqual([
       "homebrew",
       "rust",
@@ -15,6 +15,7 @@ describe("init step order", () => {
       "rust-esp",
       "bun",
       "viteplus",
+      "plannotator",
       "stow",
       "ssh",
       "fish",
@@ -48,12 +49,12 @@ describe("init failure policy", () => {
     const required = initSteps()
       .filter((s) => s.required)
       .map((s) => s.id)
-    // Bash: brew/packages/stow used `|| return 1`; the other seven warned.
+    // Bash: brew/packages/stow used `|| return 1`; optional installers warn.
     expect(required.sort()).toEqual(["homebrew", "packages", "stow"])
   })
 
-  it("leaves the other seven optional so a cosmetic failure can't brick init", () => {
-    expect(initSteps().filter((s) => !s.required)).toHaveLength(7)
+  it("leaves the other eight optional so one installer can't brick init", () => {
+    expect(initSteps().filter((s) => !s.required)).toHaveLength(8)
   })
 
   it("gives every step a unique id", () => {

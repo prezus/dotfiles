@@ -13,6 +13,7 @@ import { bunGlobals } from "./bunglobals.ts"
 import { fish } from "./fish.ts"
 import { ensureHomebrew } from "./homebrew.ts"
 import { installPackages } from "./packages.ts"
+import { plannotator } from "./plannotator.ts"
 import { applyRustList, installRustEsp, installRustup } from "./rust.ts"
 import { skills } from "./skills.ts"
 import { ssh } from "./ssh.ts"
@@ -63,6 +64,7 @@ export function initSteps(): Step[] {
     },
     { id: "bun", title: "Bun globals", run: () => fromExitCode(bunGlobals) },
     { id: "viteplus", title: "Vite+", run: () => fromExitCode(viteplus) },
+    { id: "plannotator", title: "Plannotator", run: () => fromExitCode(plannotator) },
     {
       id: "stow",
       title: "Stow dotfiles",

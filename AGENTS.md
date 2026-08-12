@@ -90,7 +90,7 @@ dotfiles/
 ```
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
-dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills
+dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills
 dotfiles update          Multi-select: repos / brew / language tools / re-stow / skills
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
@@ -103,6 +103,7 @@ dotfiles stow            Re-symlink home/ → $HOME. --dry-run previews, --adopt
 dotfiles ssh             Write the 1Password-agent + legacy-compat block into ~/.ssh/config
 dotfiles bun             Install JS globals from packages/bun-global.txt
 dotfiles viteplus        Install Vite+ (vp/vpr) to ~/.vite-plus
+dotfiles plannotator     Install the Plannotator CLI to ~/.local/bin
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
 dotfiles skills          install | update | status | verify   (from prezus/skills)

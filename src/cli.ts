@@ -14,6 +14,7 @@ import { edit } from "./commands/edit.ts"
 import { homebrew } from "./commands/homebrew.ts"
 import { init } from "./commands/init.ts"
 import { checkPackages, retryFailed } from "./commands/packages.ts"
+import { plannotator } from "./commands/plannotator.ts"
 import { fish } from "./commands/fish.ts"
 import { rust } from "./commands/rust.ts"
 import { skills } from "./commands/skills.ts"
@@ -36,8 +37,8 @@ type Command = {
 const COMMANDS: Command[] = [
   {
     name: "init",
-    description: "Full setup: brew/rust/packages/bun/vite+/stow/ssh/fish/skills",
-    help: "Full setup: brew → rust → packages → bun → Vite+ → stow → ssh → fish → skills",
+    description: "Full setup: brew/rust/packages/bun/vite+/Plannotator/stow/ssh/fish/skills",
+    help: "Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills",
     run: () => init(),
   },
   {
@@ -86,6 +87,12 @@ const COMMANDS: Command[] = [
     description: "Install rustup toolchains/targets from packages/rust.txt",
     help: "Install rustup + toolchains/targets from packages/rust.txt (+ ESP)",
     run: () => rust(),
+  },
+  {
+    name: "plannotator",
+    description: "Install the Plannotator CLI",
+    help: "Install the Plannotator binary to ~/.local/bin (integrations are stowed)",
+    run: () => plannotator(),
   },
   {
     name: "fish",
