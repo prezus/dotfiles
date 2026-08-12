@@ -1,0 +1,37 @@
+onboarding = false
+
+[theme]
+name = "catppuccin"
+
+[theme.custom]
+accent = "#c6a0f6"
+panel_bg = "#24273a"
+green = "#a6da95"
+yellow = "#eed49f"
+red = "#ed8796"
+blue = "#8aadf4"
+
+[terminal]
+default_shell = "fish"
+
+[ui]
+sidebar_width = 32
+right_click_passthrough_modifier = "ctrl"
+prompt_new_workspace_name = true
+
+agent_panel_sort = "spaces"
+[ui.toast]
+delivery = "herdr"
+
+[ui.toast.herdr]
+position = "top-right"
+
+[ui.sound]
+enabled = false
+
+[advanced]
+scrollback_limit_bytes = 52428800
+
+[experimental]
+kitty_graphics = true
+pane_history = true
