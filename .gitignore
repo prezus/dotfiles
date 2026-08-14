@@ -31,9 +31,15 @@ id_ed25519
 
 # ─── Tool configs that embed tokens (never track, even if the tool ──
 #     dir is otherwise stowed — track the sibling non-secret config only)
-**/gh/hosts.yml            # GitHub CLI OAuth token
+# NOTE: .gitignore has no inline comments — a trailing `#` is part of the
+# pattern, not a comment. Both rules below carried one and therefore matched
+# nothing, silently, for as long as they have existed. Keep comments on their
+# own line.
+# GitHub CLI OAuth token (only absent today because macOS keychains it)
+**/gh/hosts.yml
 **/github-copilot/apps.json
-**/op/config               # 1Password CLI account config
+# 1Password CLI account config
+**/op/config
 **/.config/fabric/.env
 
 # ─── Machine-local overrides (per-host, not shared) ─────────────────
