@@ -17,5 +17,10 @@
   "reviewAnalysis": {
     "semanticDiff": true,
     "callFlow": false
+  },
+  "theme": {
+    "mode": "dark",
+    "light": "plannotator",
+    "dark": "plannotator"
   }
 }
