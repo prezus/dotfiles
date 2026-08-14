@@ -39,9 +39,12 @@ export type StowAction =
       path: string
       link: string
       target: string
-      reason: "real-file" | "real-dir" | "foreign-link" | "absolute-link"
+      reason: ConflictReason
       current?: string
     }
+
+/** Why a path could not be claimed. Named so CONFLICT_REASON stays exhaustive over it. */
+export type ConflictReason = "real-file" | "real-dir" | "foreign-link" | "absolute-link"
 
 type OfKind<K extends StowAction["kind"]> = Extract<StowAction, { kind: K }>
 
@@ -181,9 +184,12 @@ export async function planStow(
   }
 }
 
-export const CONFLICT_REASON: Record<string, string> = {
+// `satisfies`, not an annotation: an annotation would erase the literal keys and
+// leave an open dictionary, so a typo'd or missing reason would go unnoticed.
+// This way the object stays exhaustive over ConflictReason AND keeps its keys.
+export const CONFLICT_REASON = {
   "real-file": "a real file exists here",
   "real-dir": "a real directory exists where a file belongs",
   "foreign-link": "a symlink pointing outside the repo",
   "absolute-link": "an absolute symlink — stow only claims relative ones",
-}
+} satisfies Record<ConflictReason, string>

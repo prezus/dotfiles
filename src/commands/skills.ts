@@ -7,7 +7,7 @@
 import { Result } from "better-result"
 import { join } from "node:path"
 import { HOME, SKILLS_REPO, SKILLS_SRC } from "../lib/env.ts"
-import { probe, runInteractiveCode } from "../lib/exec.ts"
+import { runInteractiveCode } from "../lib/exec.ts"
 import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
 import { printError, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 

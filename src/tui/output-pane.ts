@@ -117,10 +117,10 @@ export function mergeBatch(state: PaneState, batch: LogEntry[]): PaneState {
  * intended. Tagging child output `info` (what this used to do) stamped a bullet
  * on every line and flattened brew's aligned tables into identical rows.
  */
-export function styleFor(
-  line: LogEntry,
-  columns?: number,
-): { glyph: string; fg: string; text: string } {
+/** How one pane line is drawn: its marker, its colour, and the text after truncation. */
+export type LineStyle = { glyph: string; fg: string; text: string }
+
+export function styleFor(line: LogEntry, columns?: number): LineStyle {
   const text = truncate(line.message, columns)
   if (line.level !== "raw") return { ...STATUS_STYLE[line.level], text }
   // Homebrew's own section marker becomes the pane's.
