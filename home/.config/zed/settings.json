@@ -30,6 +30,30 @@
     }
   },
 
+  // Extensions
+  // Zed installs anything listed here on launch, so this is the baseline a new
+  // machine gets. `theme` and `icon_theme` below are PROVIDED by catppuccin and
+  // catppuccin-icons — without those two entries a fresh Zed silently falls back
+  // to its default theme and the rest of this file only half-applies.
+  "auto_install_extensions": {
+    "catppuccin": true,
+    "catppuccin-icons": true,
+    "ansible": true,
+    "astro": true,
+    "csv": true,
+    "docker-compose": true,
+    "dockerfile": true,
+    "fish": true,
+    "html": true,
+    "just": true,
+    "powershell": true,
+    "sql": true,
+    "svelte": true,
+    "terraform": true,
+    "toml": true,
+    "xml": true
+  },
+
   // Theme & Icons
   "icon_theme": "Catppuccin Mocha",
   "restore_on_startup": "none",
