@@ -13,6 +13,7 @@
     "@opentui/core": "0.4.5",
     "@opentui/react": "0.4.5",
     "better-result": "^2.10.0",
+    "effect": "^3.22.1",
     "react": "19.2.8"
   },
   "devDependencies": {

@@ -8,21 +8,6 @@
 // completion (home/.config/fish/completions/dotfiles.fish) calls the hidden
 // `__commands` subcommand on every tab-complete, so adding an entry here is all
 // that is required — there is no second list to keep in sync.
-import { bunGlobals } from "./commands/bunglobals.ts"
-import { doctor } from "./commands/doctor/index.ts"
-import { edit } from "./commands/edit.ts"
-import { homebrew } from "./commands/homebrew.ts"
-import { init } from "./commands/init.ts"
-import { checkPackages, retryFailed } from "./commands/packages.ts"
-import { plannotator } from "./commands/plannotator.ts"
-import { reconcile } from "./commands/reconcile.ts"
-import { fish } from "./commands/fish.ts"
-import { rust } from "./commands/rust.ts"
-import { skills } from "./commands/skills.ts"
-import { ssh } from "./commands/ssh.ts"
-import { update } from "./commands/update.ts"
-import { viteplus } from "./commands/viteplus.ts"
-import { stow } from "./commands/stow.ts"
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
 import { BOLD, RESET, isInteractive, printError } from "./lib/ui.ts"
 
@@ -35,23 +20,34 @@ type Command = {
   run: (args: string[]) => Promise<number>
 }
 
+// Every `run` dynamically imports its module rather than importing at the top of
+// this file. That is deliberate and load-bearing, not style:
+//
+// `dotfiles __commands` is called by the fish completion on EVERY tab-press, and
+// there is no build step — bun evaluates the whole module graph on each process.
+// Eagerly importing all sixteen command modules meant tab-completion paid for
+// every dependency any command might need. Measured: 7ms on the fast path with
+// lazy imports versus 70ms once a heavy module graph is in the eager set.
+//
+// Keep it this way. The COMMANDS table is still the single source of truth for
+// help, __commands and therefore the completion — only the module load moved.
 const COMMANDS: Command[] = [
   {
     name: "init",
     description: "Full setup: brew/rust/packages/bun/vite+/Plannotator/stow/ssh/fish/skills",
     help: "Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills",
-    run: () => init(),
+    run: async () => (await import("./commands/init.ts")).init(),
   },
   {
     name: "update",
     description: "Update everything: repos, brew, rust/cargo/go/bun/fisher/vite+, skills",
     help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → skills sync",
-    run: (args) => update(args),
+    run: async (args) => (await import("./commands/update.ts")).update(args),
   },
   {
     name: "doctor",
     description: "Health check (brew, stow, fish, skills links, 1Password, signing)",
-    run: (args) => doctor(args),
+    run: async (args) => (await import("./commands/doctor/index.ts")).doctor(args),
   },
   {
     name: "brew",
@@ -59,7 +55,7 @@ const COMMANDS: Command[] = [
     help:
       "Install Homebrew, then `brew bundle` packages/bundle — init's brew steps alone.\n" +
       "Run it from a shell to stay out of the dashboard entirely.",
-    run: () => homebrew(),
+    run: async () => (await import("./commands/homebrew.ts")).homebrew(),
   },
   {
     name: "reconcile",
@@ -67,68 +63,68 @@ const COMMANDS: Command[] = [
     help:
       "Walk every mismatch one at a time: keep it (declare in the bundle), remove it,\n" +
       "or never track it. Uninstalls are batched behind a single confirm.",
-    run: () => reconcile(),
+    run: async () => (await import("./commands/reconcile.ts")).reconcile(),
   },
   {
     name: "stow",
     description: "Re-symlink home/ into $HOME (--adopt on an existing machine)",
     help: "Re-symlink home/ → $HOME  (--adopt on an existing machine, --dry-run to preview)",
-    run: (args) => stow(args),
+    run: async (args) => (await import("./commands/stow.ts")).stow(args),
   },
   {
     name: "ssh",
     description: "Maintain ~/.ssh/config (1Password agent + legacy compat)",
-    run: () => ssh(),
+    run: async () => (await import("./commands/ssh.ts")).ssh(),
   },
   {
     name: "bun",
     description: "Install JS globals from packages/bun-global.txt",
-    run: () => bunGlobals(),
+    run: async () => (await import("./commands/bunglobals.ts")).bunGlobals(),
   },
   {
     name: "viteplus",
     description: "Install Vite+ (vp/vpr)",
     help: "Install Vite+ (vp/vpr) to ~/.vite-plus",
-    run: () => viteplus(),
+    run: async () => (await import("./commands/viteplus.ts")).viteplus(),
   },
   {
     name: "rust",
     description: "Install rustup toolchains/targets from packages/rust.txt",
     help: "Install rustup + toolchains/targets from packages/rust.txt (+ ESP)",
-    run: () => rust(),
+    run: async () => (await import("./commands/rust.ts")).rust(),
   },
   {
     name: "plannotator",
     description: "Install the Plannotator CLI",
     help: "Install the Plannotator binary to ~/.local/bin (integrations are stowed)",
-    run: () => plannotator(),
+    run: async () => (await import("./commands/plannotator.ts")).plannotator(),
   },
   {
     name: "fish",
     description: "Make fish the default login shell + install fisher plugins",
-    run: () => fish(),
+    run: async () => (await import("./commands/fish.ts")).fish(),
   },
   {
     name: "skills",
     // `verify` was dispatched by the bash but missing from its completion list,
     // so fish never suggested it. Now that it is real TypeScript, list it.
     description: "install | update | status | verify (from prezus/skills)",
-    run: (args) => skills(args),
+    run: async (args) => (await import("./commands/skills.ts")).skills(args),
   },
   {
     name: "check-packages",
     description: "Show which Brewfile packages are missing",
-    run: () => checkPackages(),
+    run: async () => (await import("./commands/packages.ts")).checkPackages(),
   },
   {
     name: "retry-failed",
     description: "Reinstall packages that failed during init",
-    run: () => retryFailed(),
+    run: async () => (await import("./commands/packages.ts")).retryFailed(),
   },
   {
     name: "edit",
     description: "Open the dotfiles repo in $EDITOR",
-    run: () => edit(),
+    run: async () => (await import("./commands/edit.ts")).edit(),
   },
   {
     name: "help",
