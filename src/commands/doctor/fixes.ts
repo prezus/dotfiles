@@ -21,25 +21,43 @@ export type Fix = {
 }
 
 /**
- * Removals in progress: directives deleted from packages/bundle but not yet
- * committed, whose packages are therefore still installed.
+ * Directives that were deliberately removed from packages/bundle and whose
+ * packages are therefore still installed — the drift this fix must NOT undo.
  *
- * Both diffs are consulted because a removal is equally real whether or not it
- * has been staged. Normalization matches normalizeBundle's, because the results
- * are compared against it: strip the leading "-", drop trailing options, so
+ * Two sources, because a removal is deliberate at every stage of its life:
+ *
+ *  1. The working tree (unstaged + staged). Catches a removal in progress.
+ *  2. **History.** Any directive that has ever appeared in the manifest but is
+ *     absent from it now was removed at some point, and that is a decision.
+ *
+ * Source 2 is not optional, and leaving it out was a real bug: the guard used to
+ * consult only the two working-tree diffs, both of which compare against HEAD.
+ * The moment you COMMITTED a removal it vanished from both, the guard went
+ * empty, and the fix re-appended every package you had just deleted — silently,
+ * off a single keypress. Committing the removal is what makes it most
+ * deliberate, so the old guard was strongest exactly when it mattered least.
+ * (Seen for real: `c850cfc "Remove unused packages from the bundle"` took out
+ * seven entries, and the next doctor fix put all seven straight back.)
+ *
+ * Normalization matches normalizeBundle's, because the results are compared
+ * against it: drop the leading +/-, drop trailing options, so
  * `tap "x", trusted: true` and `tap "x"` compare equal.
  *
- * The `---` guard is load-bearing: a unified diff header (`--- a/packages/bundle`)
- * also starts with a minus, and reading it as a removed directive would poison
- * the set on every single diff.
+ * The `---`/`+++` guard is load-bearing: a unified diff header
+ * (`--- a/packages/bundle`) also starts with a minus, and reading it as a
+ * directive would poison the set on every single diff.
  *
  * Returns empty on any git failure (not a repo, no HEAD, git absent), which
  * degrades to the old always-append behaviour rather than blocking the fix.
  */
 async function removedBundleLines(): Promise<Set<string>> {
   const bundlePath = join(PACKAGES_DIR, "bundle")
-  const keep = /^-(brew|cask|tap|go|cargo) /
-  const out = new Set<string>()
+  const directive = /^[-+](brew|cask|tap|go|cargo) /
+  const normalize = (line: string): string => line.slice(1).replace(/,.*$/, "").trim()
+
+  const removed = new Set<string>()
+
+  // 1. Removals not yet committed.
   for (const args of [
     ["diff", "--", bundlePath],
     ["diff", "--cached", "--", bundlePath],
@@ -47,11 +65,33 @@ async function removedBundleLines(): Promise<Set<string>> {
     const res = await probe(["git", ...args])
     if (!res.ok) continue
     for (const line of res.stdout.split("\n")) {
-      if (line.startsWith("---") || !keep.test(line)) continue
-      out.add(line.slice(1).replace(/,.*$/, "").trim())
+      if (line.startsWith("---") || !line.startsWith("-") || !directive.test(line)) continue
+      removed.add(normalize(line))
     }
   }
-  return out
+
+  // 2. Removals already committed. Every directive the manifest has ever held,
+  //    minus the ones it holds today, is a removal somebody made on purpose.
+  //    One `git log -p` rather than a query per candidate: the candidate list is
+  //    whatever is installed-but-undeclared, which on a drifted machine is not
+  //    small, and this file's whole history is a few hundred lines of diff.
+  const history = await probe(["git", "log", "-p", "--format=", "--", bundlePath])
+  if (history.ok) {
+    const everPresent = new Set<string>()
+    for (const line of history.stdout.split("\n")) {
+      if (line.startsWith("+++") || !line.startsWith("+") || !directive.test(line)) continue
+      everPresent.add(normalize(line))
+    }
+    const current = new Set(
+      (await Bun.file(bundlePath).text())
+        .split("\n")
+        .filter((l) => /^(brew|cask|tap|go|cargo) /.test(l))
+        .map((l) => l.replace(/,.*$/, "").trim()),
+    )
+    for (const line of everPresent) if (!current.has(line)) removed.add(line)
+  }
+
+  return removed
 }
 
 export const FIXES: Record<string, Fix> = {
@@ -105,16 +145,17 @@ export const FIXES: Record<string, Fix> = {
       // the second — it silently restores exactly the lines you just deleted,
       // and the TUI applies fixes straight off a keypress with no confirmation.
       //
-      // git knows the difference. A package removed from the manifest appears as
-      // a deleted line in the working-tree diff, so anything matching one of
-      // those is a removal in progress and must be left alone; `dotfiles prune`
-      // is what finishes it.
+      // git knows the difference. A package removed from the manifest shows up
+      // either as a deleted line in the working-tree diff (removal in progress)
+      // or as a directive present in history but absent today (removal already
+      // committed). Either way it must be left alone; `dotfiles reconcile` is
+      // what finishes it.
       const removed = await removedBundleLines()
       const deliberate = lines.filter((l) => removed.has(l))
       const genuine = lines.filter((l) => !removed.has(l))
 
       if (genuine.length === 0)
-        return `${deliberate.length} entr${deliberate.length === 1 ? "y" : "ies"} removed from the manifest but still installed — run: dotfiles prune`
+        return `${deliberate.length} entr${deliberate.length === 1 ? "y" : "ies"} removed from the manifest but still installed — run: dotfiles reconcile`
 
       const bundlePath = join(PACKAGES_DIR, "bundle")
       const existing = await Bun.file(bundlePath).text()
@@ -123,7 +164,7 @@ export const FIXES: Record<string, Fix> = {
       const appended = `appended ${genuine.length} entr${genuine.length === 1 ? "y" : "ies"} — review git diff`
       return deliberate.length === 0
         ? appended
-        : `${appended} (skipped ${deliberate.length} pending removal — run: dotfiles prune)`
+        : `${appended} (skipped ${deliberate.length} pending removal — run: dotfiles reconcile)`
     },
   },
 
