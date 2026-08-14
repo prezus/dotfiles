@@ -15,6 +15,7 @@ import { homebrew } from "./commands/homebrew.ts"
 import { init } from "./commands/init.ts"
 import { checkPackages, retryFailed } from "./commands/packages.ts"
 import { plannotator } from "./commands/plannotator.ts"
+import { reconcile } from "./commands/reconcile.ts"
 import { fish } from "./commands/fish.ts"
 import { rust } from "./commands/rust.ts"
 import { skills } from "./commands/skills.ts"
@@ -59,6 +60,14 @@ const COMMANDS: Command[] = [
       "Install Homebrew, then `brew bundle` packages/bundle — init's brew steps alone.\n" +
       "Run it from a shell to stay out of the dashboard entirely.",
     run: () => homebrew(),
+  },
+  {
+    name: "reconcile",
+    description: "Resolve each difference between this machine and packages/bundle",
+    help:
+      "Walk every mismatch one at a time: keep it (declare in the bundle), remove it,\n" +
+      "or never track it. Uninstalls are batched behind a single confirm.",
+    run: () => reconcile(),
   },
   {
     name: "stow",

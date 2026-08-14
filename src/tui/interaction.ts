@@ -39,6 +39,9 @@ export type DoctorIntent =
   | { kind: "fix"; id: string }
   | { kind: "rerun" }
 
+/** What a keypress does to doctor: where the cursor lands, and what to perform. */
+export type DoctorKeyResult = { nav: DoctorNav; intent: DoctorIntent }
+
 export const initialDoctorNav = (): DoctorNav => ({ cursor: 0, collapsed: new Set() })
 
 /**
@@ -50,7 +53,7 @@ export function reduceDoctorKey(
   nav: DoctorNav,
   key: KeyEvent,
   visible: readonly DoctorRow[],
-): { nav: DoctorNav; intent: DoctorIntent } {
+): DoctorKeyResult {
   const last = Math.max(0, visible.length - 1)
   const cursor = clamp(nav.cursor, last)
   const selected = visible[cursor]
@@ -89,13 +92,16 @@ export type HomeIntent =
   | { kind: "run"; command: string }
   | { kind: "refresh" }
 
+/** What a keypress does to the dashboard: where the cursor lands, and what to perform. */
+export type HomeKeyResult = { state: HomeState; intent: HomeIntent }
+
 export const initialHomeState = (): HomeState => ({ cursor: 0 })
 
 export function reduceHomeKey(
   state: HomeState,
   key: KeyEvent,
   commands: readonly string[],
-): { state: HomeState; intent: HomeIntent } {
+): HomeKeyResult {
   const last = Math.max(0, commands.length - 1)
   const cursor = clamp(state.cursor, last)
 
@@ -137,6 +143,9 @@ export type PickerIntent =
   | { kind: "cancel" }
   | { kind: "confirm"; selected: ReadonlySet<string> }
 
+/** What a keypress does to the update picker: new selection state, and what to perform. */
+export type PickerKeyResult = { state: PickerState; intent: PickerIntent }
+
 export const initialPickerState = (defaults: readonly string[]): PickerState => ({
   cursor: 0,
   selected: new Set(defaults),
@@ -146,7 +155,7 @@ export function reducePickerKey(
   state: PickerState,
   key: KeyEvent,
   ids: readonly string[],
-): { state: PickerState; intent: PickerIntent } {
+): PickerKeyResult {
   const last = Math.max(0, ids.length - 1)
   const cursor = clamp(state.cursor, last)
 
@@ -169,6 +178,84 @@ export function reducePickerKey(
     else selected.add(id)
     return { state: { cursor, selected }, intent: { kind: "none" } }
   }
+
+  return { state, intent: { kind: "none" } }
+}
+
+// ─── reconcile picker ───────────────────────────────────────────────
+
+/**
+ * One drifted package and the dispositions available to it. Both directions of
+ * drift are modelled as the same shape — an ordered choice list — because the
+ * only thing that differs between them is the words:
+ *
+ *   installed, not declared  -> remove | keep | ignore
+ *   declared, not installed  -> install | undeclare
+ *
+ * A checkbox cannot express three answers, which is why this is a cycle rather
+ * than a reuse of PickerState.
+ */
+export type ReconcileItem = {
+  /** Bundle directive, e.g. `brew "broot"` — unique, and what gets written. */
+  id: string
+  choices: readonly string[]
+}
+
+export type ReconcileState = {
+  cursor: number
+  /** id -> chosen disposition. Every item is present from the start. */
+  choice: ReadonlyMap<string, string>
+}
+
+export type ReconcileIntent =
+  | { kind: "none" }
+  | { kind: "cancel" }
+  | { kind: "confirm"; choice: ReadonlyMap<string, string> }
+
+/** What a keypress does to the reconcile picker: new dispositions, and what to perform. */
+export type ReconcileKeyResult = { state: ReconcileState; intent: ReconcileIntent }
+
+/** Each item starts on its first choice, which callers order as the safe default. */
+export const initialReconcileState = (items: readonly ReconcileItem[]): ReconcileState => ({
+  cursor: 0,
+  choice: new Map(items.map((i) => [i.id, i.choices[0] ?? ""])),
+})
+
+const cycle = (
+  state: ReconcileState,
+  items: readonly ReconcileItem[],
+  cursor: number,
+  step: number,
+): ReconcileState => {
+  const item = items[cursor]
+  if (!item || item.choices.length === 0) return { ...state, cursor }
+  const current = state.choice.get(item.id) ?? item.choices[0]
+  const at = item.choices.indexOf(current as string)
+  // Modulo twice: JS `%` keeps the sign, so a left-cycle off index 0 would
+  // otherwise land on a negative index and read as undefined.
+  const next = item.choices[(((at + step) % item.choices.length) + item.choices.length) % item.choices.length]
+  const choice = new Map(state.choice)
+  choice.set(item.id, next as string)
+  return { cursor, choice }
+}
+
+export function reduceReconcileKey(
+  state: ReconcileState,
+  key: KeyEvent,
+  items: readonly ReconcileItem[],
+): ReconcileKeyResult {
+  const last = Math.max(0, items.length - 1)
+  const cursor = clamp(state.cursor, last)
+
+  if (isQuit(key)) return { state, intent: { kind: "cancel" } }
+  if (isDown(key)) return { state: { ...state, cursor: clamp(cursor + 1, last) }, intent: { kind: "none" } }
+  if (isUp(key)) return { state: { ...state, cursor: clamp(cursor - 1, last) }, intent: { kind: "none" } }
+  if (key.name === "return") return { state, intent: { kind: "confirm", choice: state.choice } }
+
+  if (key.name === "space" || key.name === "right" || key.name === "l")
+    return { state: cycle(state, items, cursor, 1), intent: { kind: "none" } }
+  if (key.name === "left" || key.name === "h")
+    return { state: cycle(state, items, cursor, -1), intent: { kind: "none" } }
 
   return { state, intent: { kind: "none" } }
 }

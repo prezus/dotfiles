@@ -32,6 +32,8 @@ import {
 import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
+import { ReconcilePicker, type ReconcileRow } from "./reconcile-picker.tsx"
+import { applyReconcile, collectReconcileRows } from "../commands/reconcile.ts"
 
 export type HomeCommand = {
   name: string
@@ -82,7 +84,10 @@ function Home({
   // enters, destroy, resume — which reads as a flash. Worse, the second
   // renderer overwrote the global in setRenderer(), so afterwards
   // withSuspendedUI pointed at a destroyed renderer.
-  const [view, setView] = useState<"home" | "doctor" | "update" | "output">("home")
+  const [view, setView] = useState<"home" | "doctor" | "update" | "reconcile" | "output">("home")
+  // Gathered BEFORE the picker mounts, because computing drift shells out to
+  // `brew bundle dump` and a picker cannot render rows it does not have yet.
+  const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>([])
   const [output, setOutput] = useState<PaneState>(emptyPane)
 
   // The status bar's clock. Bumped on every flush — including empty ones — so
@@ -182,9 +187,31 @@ function Home({
   const runCommand = useCallback(
     async (name: string) => {
       if (busy) return
-      // These two are themselves full-screen; render them on this renderer.
+      // These are themselves full-screen; render them on this renderer.
       if (name === "doctor" || name === "update") {
         setView(name)
+        return
+      }
+      // Same, but its rows have to be computed first — and if there is no drift
+      // there is nothing to pick, so say so rather than opening an empty picker.
+      if (name === "reconcile") {
+        setBusy(true)
+        setStatus("reading installed packages…")
+        try {
+          const rows = await collectReconcileRows()
+          if (rows === null) {
+            setStatus("reconcile: could not read brew state")
+            return
+          }
+          if (rows.length === 0) {
+            setStatus("no drift — machine matches packages/bundle")
+            return
+          }
+          setReconcileRows(rows)
+          setView("reconcile")
+        } finally {
+          setBusy(false)
+        }
         return
       }
       const command = commands.find((c) => c.name === name)
@@ -309,6 +336,25 @@ function Home({
           // The selection is already made, so pass it through explicitly —
           // update() must not open a picker of its own.
           void runInPane("update", () => update([`--only=${[...picked].join(",")}`]))
+        }}
+      />
+    )
+  }
+
+  if (view === "reconcile") {
+    return (
+      <ReconcilePicker
+        rows={reconcileRows}
+        onDone={(chosen) => {
+          setView("home")
+          if (chosen === null) {
+            setStatus("reconcile cancelled")
+            return
+          }
+          // The picker has unmounted, so this renderer is free again and the
+          // uninstalls' sudo prompts can suspend it properly. applyReconcile
+          // must not open a picker of its own — same contract as update().
+          void runInPane("reconcile", () => applyReconcile(reconcileRows, chosen))
         }}
       />
     )

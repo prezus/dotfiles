@@ -20,6 +20,40 @@ export type Fix = {
   run: () => Promise<string>
 }
 
+/**
+ * Removals in progress: directives deleted from packages/bundle but not yet
+ * committed, whose packages are therefore still installed.
+ *
+ * Both diffs are consulted because a removal is equally real whether or not it
+ * has been staged. Normalization matches normalizeBundle's, because the results
+ * are compared against it: strip the leading "-", drop trailing options, so
+ * `tap "x", trusted: true` and `tap "x"` compare equal.
+ *
+ * The `---` guard is load-bearing: a unified diff header (`--- a/packages/bundle`)
+ * also starts with a minus, and reading it as a removed directive would poison
+ * the set on every single diff.
+ *
+ * Returns empty on any git failure (not a repo, no HEAD, git absent), which
+ * degrades to the old always-append behaviour rather than blocking the fix.
+ */
+async function removedBundleLines(): Promise<Set<string>> {
+  const bundlePath = join(PACKAGES_DIR, "bundle")
+  const keep = /^-(brew|cask|tap|go|cargo) /
+  const out = new Set<string>()
+  for (const args of [
+    ["diff", "--", bundlePath],
+    ["diff", "--cached", "--", bundlePath],
+  ]) {
+    const res = await probe(["git", ...args])
+    if (!res.ok) continue
+    for (const line of res.stdout.split("\n")) {
+      if (line.startsWith("---") || !keep.test(line)) continue
+      out.add(line.slice(1).replace(/,.*$/, "").trim())
+    }
+  }
+  return out
+}
+
 export const FIXES: Record<string, Fix> = {
   "login-shell": {
     label: "chsh to fish",
@@ -65,11 +99,31 @@ export const FIXES: Record<string, Fix> = {
       const lines = (result.extra ?? []).map((l) => l.text.trim()).filter(Boolean)
       if (lines.length === 0) return "nothing untracked"
 
+      // The check cannot tell the two directions of drift apart: "installed ad
+      // hoc, never declared" and "deliberately undeclared, not yet uninstalled"
+      // both surface as untracked. Appending is right for the first and destroys
+      // the second — it silently restores exactly the lines you just deleted,
+      // and the TUI applies fixes straight off a keypress with no confirmation.
+      //
+      // git knows the difference. A package removed from the manifest appears as
+      // a deleted line in the working-tree diff, so anything matching one of
+      // those is a removal in progress and must be left alone; `dotfiles prune`
+      // is what finishes it.
+      const removed = await removedBundleLines()
+      const deliberate = lines.filter((l) => removed.has(l))
+      const genuine = lines.filter((l) => !removed.has(l))
+
+      if (genuine.length === 0)
+        return `${deliberate.length} entr${deliberate.length === 1 ? "y" : "ies"} removed from the manifest but still installed — run: dotfiles prune`
+
       const bundlePath = join(PACKAGES_DIR, "bundle")
       const existing = await Bun.file(bundlePath).text()
       const suffix = existing.endsWith("\n") ? "" : "\n"
-      await Bun.write(bundlePath, `${existing}${suffix}${lines.join("\n")}\n`)
-      return `appended ${lines.length} entr${lines.length === 1 ? "y" : "ies"} — review git diff`
+      await Bun.write(bundlePath, `${existing}${suffix}${genuine.join("\n")}\n`)
+      const appended = `appended ${genuine.length} entr${genuine.length === 1 ? "y" : "ies"} — review git diff`
+      return deliberate.length === 0
+        ? appended
+        : `${appended} (skipped ${deliberate.length} pending removal — run: dotfiles prune)`
     },
   },
 

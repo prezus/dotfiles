@@ -1,4 +1,4 @@
-# Rust toolchain managed by `dot rust` (rustup — not brew, for cross/embedded targets).
+# Rust toolchain managed by `dotfiles rust` (rustup — not brew, for cross/embedded targets).
 # Format: '<kind> <value>'. Applied to rustup; cargo global tools live in packages/bundle.
 
 # Toolchains
