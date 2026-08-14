@@ -6,6 +6,9 @@
   "defaultThinkingLevel": "medium",
   "quietStartup": false,
   "packages": [
-    "npm:@plannotator/pi-extension"
+    "npm:@plannotator/pi-extension",
+    "npm:pi-stop",
+    "npm:pi-toggle-skills@0.1.11",
+    "npm:@ff-labs/pi-fff"
   ]
 }
