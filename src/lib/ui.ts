@@ -1,3 +1,4 @@
+import { readSync } from "node:fs"
 import type { StepState } from "./steps.ts"
 import { withTerminal } from "./terminal.ts"
 
@@ -94,6 +95,49 @@ export const printInfo = (msg: string): void => emit("info", msg, `${CYAN}ℹ${R
 export const printRaw = (msg: string): void => emit("raw", msg, msg)
 
 /**
+ * What the user typed, resolved against the default. Pure, so the y/n/empty
+ * grid is testable without a terminal.
+ *
+ * `null` means the read failed or hit EOF, which resolves to the default for
+ * the same reason a non-interactive caller does — and every gate that uses this
+ * defaults to "no", so a failed read can never widen a blast radius.
+ */
+export function interpretAnswer(raw: string | null, defaultYes: boolean): boolean {
+  if (raw === null) return defaultYes
+  const answer = raw.trim().toLowerCase()
+  if (answer === "") return defaultYes
+  return answer === "y" || answer === "yes"
+}
+
+/**
+ * Read one line from fd 0, blocking.
+ *
+ * Deliberately NOT `Bun.stdin.stream()`. That is a single process-global
+ * ReadableStream, and OpenTUI's CliRenderer acquires a reader on it for key
+ * handling which `renderer.destroy()` does NOT release — it restores raw mode
+ * and leaves the lock. Any second consumer in a process that has ever mounted a
+ * TUI then dies on `Invalid state: ReadableStream is locked`.
+ *
+ * That is not hypothetical: it is what `dotfiles reconcile` did at its uninstall
+ * gate. The picker closes, `clearRenderer` correctly unregisters the suspend
+ * handler, `withTerminal` is a clean passthrough by then — and the confirm still
+ * broke, one level below all of that, because the stream was still locked. The
+ * prompt printed, the keypress went nowhere, and the untap never ran.
+ *
+ * A plain descriptor read shares no such state. Blocking is also the honest
+ * semantics for a gate that has nothing else to do until it is answered.
+ */
+function readLineSync(): string | null {
+  const buf = Buffer.alloc(64)
+  try {
+    return buf.subarray(0, readSync(0, buf, 0, buf.length, null)).toString()
+  } catch {
+    // EAGAIN if something left the descriptor non-blocking, or EOF mid-read.
+    return null
+  }
+}
+
+/**
  * Yes/no prompt — the port of bash `confirm()`. Non-interactive callers get the
  * default rather than a hang, which the bash version would not have survived.
  */
@@ -107,11 +151,6 @@ export async function confirm(prompt = "Continue?", defaultYes = false): Promise
   // duration of the question.
   return await withTerminal(async () => {
     process.stdout.write(prompt + suffix)
-    for await (const chunk of Bun.stdin.stream()) {
-      const answer = new TextDecoder().decode(chunk).trim().toLowerCase()
-      if (answer === "") return defaultYes
-      return answer === "y" || answer === "yes"
-    }
-    return defaultYes
+    return interpretAnswer(readLineSync(), defaultYes)
   })
 }
