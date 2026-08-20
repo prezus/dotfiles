@@ -10,9 +10,19 @@
 import type { CliRenderer } from "@opentui/core"
 import { setSuspendHandler } from "../lib/terminal.ts"
 
-let current: CliRenderer | null = null
+/**
+ * The only part of a CliRenderer this module touches.
+ *
+ * Narrower than CliRenderer on purpose. OpenTUI is pre-1.0 and pinned exactly,
+ * so the less of its surface we name, the less a breaking bump can reach — and
+ * a test can stand in a plain object with two functions instead of asserting
+ * one through `unknown` into a type it does not implement.
+ */
+export type SuspendableRenderer = Pick<CliRenderer, "suspend" | "resume">
 
-export function setRenderer(renderer: CliRenderer): void {
+let current: SuspendableRenderer | null = null
+
+export function setRenderer(renderer: SuspendableRenderer): void {
   current = renderer
   // exec.ts suspends around any child that needs the keyboard; this is how it
   // reaches the renderer without lib/ importing the TUI.
@@ -20,7 +30,7 @@ export function setRenderer(renderer: CliRenderer): void {
 }
 
 /** Stop routing terminal hand-offs to a renderer that is about to be destroyed. */
-export function clearRenderer(renderer: CliRenderer): void {
+export function clearRenderer(renderer: SuspendableRenderer): void {
   // A stale view must not clear a newer renderer that replaced it.
   if (current !== renderer) return
   current = null

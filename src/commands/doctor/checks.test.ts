@@ -150,7 +150,7 @@ describe("runChecks (integration, runs against this machine)", () => {
     for (const r of results) {
       expect(r.result).toBeDefined()
       expect(["ok", "warn", "fail", "info"]).toContain(r.result.status)
-      expect(typeof r.result.message).toBe("string")
+      expect(r.result.message).toBeTypeOf("string")
     }
   }, 60_000)
 

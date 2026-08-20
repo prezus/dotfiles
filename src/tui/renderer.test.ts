@@ -1,15 +1,16 @@
 import { describe, expect, it } from "bun:test"
-import type { CliRenderer } from "@opentui/core"
 import { withTerminal } from "../lib/terminal.ts"
-import { clearRenderer, setRenderer } from "./renderer.ts"
+import { clearRenderer, setRenderer, type SuspendableRenderer } from "./renderer.ts"
 
 describe("renderer lifecycle", () => {
   it("does not suspend a renderer after that renderer has been cleared", async () => {
     const calls: string[] = []
-    const renderer = {
-      suspend: () => calls.push("suspend"),
-      resume: () => calls.push("resume"),
-    } as unknown as CliRenderer
+    // No assertion needed: setRenderer asks for the two methods it calls, and
+    // this object has them.
+    const renderer: SuspendableRenderer = {
+      suspend: () => void calls.push("suspend"),
+      resume: () => void calls.push("resume"),
+    }
 
     setRenderer(renderer)
     clearRenderer(renderer)

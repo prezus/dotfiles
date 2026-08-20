@@ -34,6 +34,12 @@ async function repoWithBundleHistory(states: string[]): Promise<string> {
   await git("init", "-q")
   await git("config", "user.email", "test@example.com")
   await git("config", "user.name", "test")
+  // A temp repo still inherits ~/.gitconfig, where this repo's own `commit.
+  // gpgsign = true` lives. That sends every commit below through op-ssh-sign,
+  // which blocks on a 1Password approval nobody is there to give — so the suite
+  // passed or hung depending on whether 1Password happened to be unlocked.
+  await git("config", "commit.gpgsign", "false")
+  await git("config", "tag.gpgsign", "false")
   await Bun.write(join(dir, "packages", ".keep"), "")
   for (const [i, state] of states.entries()) {
     await Bun.write(join(dir, "packages", "bundle"), state)

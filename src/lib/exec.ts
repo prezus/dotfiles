@@ -87,7 +87,14 @@ export class Env {
     )
   }
 
-  toObject(): Record<string, string> {
+  /**
+   * A copy of the variables, for handing to a child.
+   *
+   * Return type deliberately inferred: `vars` is already declared
+   * `Record<string, string>`, so annotating the same shape again only restates
+   * evidence the field already carries.
+   */
+  toObject() {
     return { ...this.vars }
   }
 }

@@ -94,7 +94,15 @@ async function removedBundleLines(): Promise<Set<string>> {
   return removed
 }
 
-export const FIXES: Record<string, Fix> = {
+/**
+ * Every fix, keyed by the check it repairs.
+ *
+ * `satisfies` rather than an annotation: `Record<string, Fix>` would throw away
+ * the one thing the literal actually knows — which check ids have a fix — while
+ * still not being the type the lookup below needs. This way each entry is
+ * checked against Fix and the keys stay visible.
+ */
+const FIXES = {
   "login-shell": {
     label: "chsh to fish",
     run: async () => {
@@ -186,7 +194,7 @@ export const FIXES: Record<string, Fix> = {
       return `removed ${removed}/${broken.length} broken symlink(s)`
     },
   },
-}
+} satisfies Record<string, Fix>
 
 async function skillsInstall(): Promise<string> {
   // Native since Phase 3, but it may clone the skills repo, so it still needs
@@ -195,4 +203,12 @@ async function skillsInstall(): Promise<string> {
   return code === 0 ? "skills symlinks wired" : "skills install failed"
 }
 
-export const fixFor = (checkId: string): Fix | undefined => FIXES[checkId]
+/**
+ * A check id arrives as a plain string — it comes from CHECKS, and most checks
+ * have no fix — so the lookup is genuinely partial. A Map says that in the type
+ * system and answers it in one step, without asserting the id into a key union
+ * it might not belong to.
+ */
+const FIX_BY_CHECK = new Map<string, Fix>(Object.entries(FIXES))
+
+export const fixFor = (checkId: string): Fix | undefined => FIX_BY_CHECK.get(checkId)
