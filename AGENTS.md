@@ -164,6 +164,20 @@ sequences when piped.
   component. Components render state and perform intents; they decide nothing. This is what
   makes the interactive paths testable without a terminal — everything except drawing and
   restoring cooked mode, both of which are OpenTUI's.
+
+- **Nothing renders an unbounded list.** Every screen used to draw all its rows —
+  `rows.map`, doctor's 26 checks, a fixed 24-line output tail — so on a short terminal the
+  row you needed to act on simply was not on screen. `src/tui/scroll.ts` owns the
+  arithmetic (pure, tested): `windowFor` for cursor-driven lists, `tailWindow` for the
+  output pane's follow-from-the-bottom scrollback, and `fitWindow` for doctor, whose rows
+  are **not** all one row tall because a failing check draws its `extra` detail lines too.
+  Adding a screen with a list means using one of these, not `map`.
+- **Resize is a subscription, not a read.** `paneRows()`/`truncate()` always read
+  `process.stdout`, but nothing told React the answer had changed, so layout froze at
+  whatever size it had when the last keypress landed. `useTerminalSize()`
+  (`src/tui/use-terminal-size.ts`) is the single listener; screens read it instead of
+  `process.stdout`. `exec.ts` keeps its own copy of that subscription — it resizes the
+  child's PTY live, and `lib/` must not import the UI layer.
 - **Child output streams into the UI by default.** `runInteractive` checks for a log sink:
   if one is installed (the TUI is showing a pane) it pipes the child and streams its lines
   in, rather than inheriting the terminal. brew, stow, rustup toolchains and bun all render

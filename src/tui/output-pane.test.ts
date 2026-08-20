@@ -167,9 +167,18 @@ describe("paneRows", () => {
     expect(paneRows(30)).toBe(22)
   })
 
-  it("stays usable on a small terminal and bounded on a large one", () => {
-    expect(paneRows(10)).toBe(8)
-    expect(paneRows(200)).toBe(24)
+  it("grows with the terminal instead of stopping at a ceiling", () => {
+    // The old upper clamp of 24 left most of a tall window blank.
+    expect(paneRows(60)).toBe(52)
+    expect(paneRows(200)).toBe(192)
+  })
+
+  it("shrinks to fit a short terminal rather than overflowing it", () => {
+    // The old floor of 8 made the pane taller than a 12-row window, which
+    // pushed the footer off the bottom of the screen.
+    expect(paneRows(12)).toBe(4)
+    expect(paneRows(10)).toBe(3)
+    expect(paneRows(4)).toBe(3)
   })
 })
 

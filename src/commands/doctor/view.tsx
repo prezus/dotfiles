@@ -5,10 +5,12 @@
 // touch src/tui/ and this file rather than the whole feature.
 import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BOLD, STATUS_COLOR, STATUS_GLYPH, theme } from "../../tui/theme.ts"
 import { initialDoctorNav, reduceDoctorKey } from "../../tui/interaction.ts"
 import { clearRenderer, setRenderer } from "../../tui/renderer.ts"
+import { fitWindow, hiddenCounts } from "../../tui/scroll.ts"
+import { useTerminalSize } from "../../tui/use-terminal-size.ts"
 import {
   CHECKS,
   SECTIONS,
@@ -40,7 +42,15 @@ export async function runDoctorTui(): Promise<number> {
   })
 }
 
+/**
+ * How many rows a check draws: its own line, plus one per `extra` detail line.
+ * Windowing on item COUNT would be wrong here — a panel of failing checks with
+ * detail is several times taller than the same panel when everything is green.
+ */
+const rowHeight = (row: Row): number => (isPending(row) ? 1 : 1 + (row.result.extra?.length ?? 0))
+
 export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
+  const size = useTerminalSize()
   // Seed with every check as pending, then replace each as it resolves — the
   // panel fills in progressively instead of blocking on the slowest probe.
   const [rows, setRows] = useState<Row[]>(() =>
@@ -85,6 +95,23 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
   }, [rows, collapsed])
 
   const selected = visible[Math.min(cursor, visible.length - 1)]
+
+  // Sections still draw in full — they are headings, not content — so their
+  // rows come out of the budget before the checks get to use it.
+  const sectionsShown = new Set(
+    rows.filter((r) => isPending(r) || isApplicable(r)).map((r) => r.section),
+  ).size
+  const startRef = useRef(0)
+  const viewport = Math.max(3, size.rows - 6 - sectionsShown * 2)
+  const rowWindow = fitWindow(
+    visible.map(rowHeight),
+    Math.min(cursor, Math.max(0, visible.length - 1)),
+    viewport,
+    startRef.current,
+  )
+  startRef.current = rowWindow.start
+  const onScreen = new Set(visible.slice(rowWindow.start, rowWindow.end).map((r) => r.id))
+  const { above, below } = hiddenCounts(rowWindow, visible.length)
 
   const applyFix = useCallback(
     async (row: Row | undefined) => {
@@ -188,7 +215,7 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
             </box>
 
             {!folded &&
-              sectionRows.map((row) => {
+              sectionRows.filter((row) => onScreen.has(row.id)).map((row) => {
                 const active = selected?.id === row.id
                 const marker = active ? " ❯ " : "   "
 
@@ -224,7 +251,14 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
       })}
 
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.dim}>{"─".repeat(60)}</text>
+        <text fg={theme.dim}>{"─".repeat(Math.max(10, size.columns - 4))}</text>
+        {(above > 0 || below > 0) && (
+          <text fg={theme.dim}>
+            {[above > 0 ? `↑ ${above} above` : null, below > 0 ? `↓ ${below} below` : null]
+              .filter((line) => line !== null)
+              .join(" · ")}
+          </text>
+        )}
         <text fg={busy ? theme.orange : theme.gray}>{status}</text>
         <text fg={theme.bgHard}>↑↓ nav · ⏎ fix · space fold · r re-run · q quit</text>
       </box>

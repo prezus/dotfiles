@@ -9,6 +9,7 @@ import {
   initialPickerState,
   reduceDoctorKey,
   reduceHomeKey,
+  reduceOutputKey,
   reducePickerKey,
   type DoctorNav,
   type DoctorRow,
@@ -256,5 +257,60 @@ describe("update picker", () => {
     const before = new Set(state.selected)
     reducePickerKey(state, { name: "space" }, ids)
     expect(state.selected).toEqual(before)
+  })
+})
+
+describe("reduceOutputKey", () => {
+  const view = { maxOffset: 100, page: 10, busy: false }
+  const at = (offset: number) => ({ offset })
+
+  it("scrolls up away from the tail and back down toward it", () => {
+    expect(reduceOutputKey(at(0), { name: "up" }, view).state.offset).toBe(1)
+    expect(reduceOutputKey(at(0), { name: "k" }, view).state.offset).toBe(1)
+    expect(reduceOutputKey(at(5), { name: "down" }, view).state.offset).toBe(4)
+    expect(reduceOutputKey(at(5), { name: "j" }, view).state.offset).toBe(4)
+  })
+
+  it("cannot scroll past the tail or past the oldest retained line", () => {
+    expect(reduceOutputKey(at(0), { name: "down" }, view).state.offset).toBe(0)
+    expect(reduceOutputKey(at(100), { name: "up" }, view).state.offset).toBe(100)
+  })
+
+  it("pages by the viewport height", () => {
+    expect(reduceOutputKey(at(0), { name: "pageup" }, view).state.offset).toBe(10)
+    expect(reduceOutputKey(at(30), { name: "pagedown" }, view).state.offset).toBe(20)
+  })
+
+  it("jumps to the oldest line with g/home and back to following with G/end", () => {
+    expect(reduceOutputKey(at(0), { name: "g" }, view).state.offset).toBe(100)
+    expect(reduceOutputKey(at(0), { name: "home" }, view).state.offset).toBe(100)
+    expect(reduceOutputKey(at(100), { name: "end" }, view).state.offset).toBe(0)
+    // Uppercase arrives as shift+g, never as name "G".
+    expect(reduceOutputKey(at(100), { name: "g", shift: true }, view).state.offset).toBe(0)
+  })
+
+  it("keeps scrolling live while a command is running", () => {
+    // The long brew upgrade is exactly when the history is worth reading.
+    const busy = { ...view, busy: true }
+    expect(reduceOutputKey(at(0), { name: "pageup" }, busy).state.offset).toBe(10)
+  })
+
+  it("dismisses only once nothing is running", () => {
+    expect(reduceOutputKey(at(0), { name: "q" }, view).intent).toEqual({ kind: "dismiss" })
+    expect(reduceOutputKey(at(0), { name: "escape" }, view).intent).toEqual({ kind: "dismiss" })
+    expect(reduceOutputKey(at(0), { name: "return" }, view).intent).toEqual({ kind: "dismiss" })
+    const busy = { ...view, busy: true }
+    expect(reduceOutputKey(at(0), { name: "q" }, busy).intent).toEqual({ kind: "none" })
+  })
+
+  it("clamps a held offset when the viewport grows past the history", () => {
+    // Resizing taller shrinks how far back you can scroll.
+    expect(reduceOutputKey(at(90), { name: "up" }, { ...view, maxOffset: 12 }).state.offset).toBe(12)
+  })
+
+  it("ignores keys it does not bind", () => {
+    const result = reduceOutputKey(at(4), { name: "x" }, view)
+    expect(result.state.offset).toBe(4)
+    expect(result.intent).toEqual({ kind: "none" })
   })
 })

@@ -297,6 +297,20 @@ export class LineAssembler {
 const paneColumns = (): number => Math.max(40, (process.stdout.columns ?? 80) - 6)
 
 /**
+ * Rows to give the child's PTY.
+ *
+ * This used to be a hardcoded 24, which is a lie on any other terminal: tools
+ * that page or draw progress against the height they are told (brew's own
+ * output, rustup, anything using a curses-ish redraw) were sizing to a window
+ * that did not exist. Mirrors paneColumns' allowance for our chrome.
+ *
+ * Deliberately computed here rather than imported from tui/output-pane.ts —
+ * lib/ does not depend on the UI layer, which is what lets the same exec paths
+ * run under the plain CLI.
+ */
+const paneTerminalRows = (): number => Math.max(10, (process.stdout.rows ?? 30) - 8)
+
+/**
  * Run `cmd` with its stdin on /dev/null while leaving stdout on the PTY.
  *
  * A PTY is bidirectional, so attaching one silently overrides `stdin: "ignore"`
@@ -390,7 +404,7 @@ export async function runInteractive(
       // believes it is interactive and talks, while we still read every byte.
       terminal: {
         cols: paneColumns(),
-        rows: 24,
+        rows: paneTerminalRows(),
         data: (_terminal, bytes) => assembler.write(decoder.decode(bytes, { stream: true })),
         exit: () => ptyClosed(),
       },
@@ -400,6 +414,15 @@ export async function runInteractive(
     return Result.err(new SpawnError({ command: cmd.join(" "), message: String(spawned.error) }))
   }
   const proc = spawned.value
+
+  // Keep the child's PTY the same size as the window it is being drawn into.
+  // Without this a resize mid-run leaves the child wrapping to the width it was
+  // given at spawn — and a long `brew upgrade` is exactly the command you are
+  // most likely to resize around, because it is the one you are waiting on.
+  const onResize = (): void => {
+    proc.terminal?.resize(paneColumns(), paneTerminalRows())
+  }
+  process.stdout.on("resize", onResize)
 
   // Note the PTY `exit` callback reports stream lifecycle, NOT the child's
   // status — the real exit code only ever comes from `proc.exited`, or every
@@ -412,6 +435,7 @@ export async function runInteractive(
   await Promise.race([closed, Bun.sleep(1000)])
   assembler.write(decoder.decode()) // flush any multi-byte tail the stream decoder buffered
   assembler.end()
+  process.stdout.off("resize", onResize)
   proc.terminal?.close()
   return Result.ok(code)
 }

@@ -5,10 +5,12 @@
 // a small checkbox list: space toggles, enter runs, q cancels.
 import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { UpdateTask } from "../commands/update.ts"
 import { initialPickerState, reducePickerKey, type PickerState } from "./interaction.ts"
 import { clearRenderer, setRenderer } from "./renderer.ts"
+import { hiddenCounts, windowFor } from "./scroll.ts"
+import { useTerminalSize } from "./use-terminal-size.ts"
 import { BOLD, theme } from "./theme.ts"
 
 /** Resolves to the chosen ids, or null if the user cancelled. */
@@ -39,6 +41,7 @@ export function Picker({
   tasks: UpdateTask[]
   onDone: (chosen: Set<string> | null) => void
 }) {
+  const size = useTerminalSize()
   const ids = tasks.map((t) => t.id)
   const [state, setState] = useState<PickerState>(() =>
     initialPickerState(tasks.filter((t) => t.default).map((t) => t.id)),
@@ -54,6 +57,13 @@ export function Picker({
     else if (intent.kind === "confirm") onDone(new Set(intent.selected))
   })
 
+  // Chrome above and below the list: title, subtitle, blank, rule, count, hint.
+  const viewport = Math.max(3, size.rows - 8)
+  const startRef = useRef(0)
+  const rowWindow = windowFor(startRef.current, tasks.length, cursor, viewport)
+  startRef.current = rowWindow.start
+  const { above, below } = hiddenCounts(rowWindow, tasks.length)
+
   return (
     <box flexDirection="column" padding={1}>
       <text fg={theme.blue} attributes={BOLD}>
@@ -62,7 +72,8 @@ export function Picker({
       <text fg={theme.gray}>choose what to update</text>
 
       <box flexDirection="column" marginTop={1}>
-        {tasks.map((task, index) => {
+        {tasks.slice(rowWindow.start, rowWindow.end).map((task, offset) => {
+          const index = rowWindow.start + offset
           const active = index === cursor
           const on = selected.has(task.id)
           return (
@@ -77,7 +88,14 @@ export function Picker({
       </box>
 
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.dim}>{"─".repeat(56)}</text>
+        <text fg={theme.dim}>{"─".repeat(Math.max(10, size.columns - 4))}</text>
+        {(above > 0 || below > 0) && (
+          <text fg={theme.dim}>
+            {[above > 0 ? `↑ ${above} above` : null, below > 0 ? `↓ ${below} below` : null]
+              .filter((s) => s !== null)
+              .join(" · ")}
+          </text>
+        )}
         <text fg={theme.gray}>
           {selected.size} of {tasks.length} selected
         </text>

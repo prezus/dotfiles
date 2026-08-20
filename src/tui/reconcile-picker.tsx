@@ -9,7 +9,7 @@
 // Rendered as a cycle, not a checkbox: three answers do not fit two states.
 import { createCliRenderer } from "@opentui/core"
 import { createRoot, useKeyboard } from "@opentui/react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import {
   initialReconcileState,
   reduceReconcileKey,
@@ -17,6 +17,8 @@ import {
   type ReconcileState,
 } from "./interaction.ts"
 import { clearRenderer, setRenderer } from "./renderer.ts"
+import { hiddenCounts, windowFor } from "./scroll.ts"
+import { useTerminalSize } from "./use-terminal-size.ts"
 import { BOLD, theme } from "./theme.ts"
 
 /** A drifted package plus the display context the picker needs. */
@@ -66,12 +68,27 @@ export function ReconcilePicker({
     else if (intent.kind === "confirm") onDone(new Map(intent.choice))
   })
 
+  const size = useTerminalSize()
   const removing = rows.filter((r) => choice.get(r.id) === "remove").length
   const width = Math.max(...rows.map((r) => r.id.length), 10)
 
   // Section headings are rendered inline rather than as their own rows so the
   // cursor index stays 1:1 with `rows` — the reducer navigates items, and a
   // heading the cursor could land on would break that correspondence.
+  //
+  // That 1:1 is also why the window is computed over ITEMS and the headings are
+  // budgeted for rather than counted: reserving one row per group is at worst
+  // slightly conservative, and never leaves the cursor drawn off the screen.
+  const groups = new Set(rows.map((r) => r.group)).size
+  const viewport = Math.max(3, size.rows - 9 - groups)
+  const startRef = useRef(0)
+  const rowWindow = windowFor(startRef.current, rows.length, cursor, viewport)
+  startRef.current = rowWindow.start
+  const visible = rows.slice(rowWindow.start, rowWindow.end)
+  const { above, below } = hiddenCounts(rowWindow, rows.length)
+
+  // Reset per render, and deliberately empty: the first visible row always
+  // draws its heading, so a window that opens mid-group still says which one.
   let lastGroup = ""
 
   return (
@@ -84,7 +101,8 @@ export function ReconcilePicker({
       </text>
 
       <box flexDirection="column" marginTop={1}>
-        {rows.map((row, index) => {
+        {visible.map((row, offset) => {
+          const index = rowWindow.start + offset
           const active = index === cursor
           const chosen = choice.get(row.id)
           const heading = row.group !== lastGroup ? row.group : null
@@ -93,7 +111,7 @@ export function ReconcilePicker({
             <box key={row.id} flexDirection="column">
               {heading ? (
                 <text fg={theme.orange} attributes={BOLD}>
-                  {(index === 0 ? "" : "\n") + heading}
+                  {(offset === 0 ? "" : "\n") + heading}
                 </text>
               ) : null}
               <box flexDirection="row">
@@ -116,7 +134,14 @@ export function ReconcilePicker({
       </box>
 
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.dim}>{"─".repeat(64)}</text>
+        <text fg={theme.dim}>{"─".repeat(Math.max(10, size.columns - 4))}</text>
+        {(above > 0 || below > 0) && (
+          <text fg={theme.dim}>
+            {[above > 0 ? `↑ ${above} above` : null, below > 0 ? `↓ ${below} below` : null]
+              .filter((s) => s !== null)
+              .join(" · ")}
+          </text>
+        )}
         <text fg={removing > 0 ? theme.red : theme.gray}>
           {removing} to uninstall — you will be asked to confirm before anything is removed
         </text>

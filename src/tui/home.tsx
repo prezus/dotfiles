@@ -16,7 +16,14 @@ import { UPDATE_TASKS, update } from "../commands/update.ts"
 import { VERSION } from "../lib/env.ts"
 import { setLogSink, setStepSink, type StepEvent } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
-import { initialHomeState, reduceHomeKey } from "./interaction.ts"
+import {
+  initialHomeState,
+  initialOutputState,
+  reduceHomeKey,
+  reduceOutputKey,
+} from "./interaction.ts"
+import { hiddenCounts, maxOffset, tailWindow } from "./scroll.ts"
+import { useTerminalSize } from "./use-terminal-size.ts"
 import {
   currentActivity,
   emptyPane,
@@ -73,6 +80,10 @@ function Home({
   commands: HomeCommand[]
   onExit: (code: number) => void
 }) {
+  // Re-renders the whole dashboard when the window changes size, which is what
+  // makes paneRows/truncate recompute — they always read the terminal, but
+  // nothing used to tell React that the answer had changed.
+  const size = useTerminalSize()
   const [state, setState] = useState(initialHomeState)
   const [summary, setSummary] = useState<Summary>({ checks: null, stow: null })
   const [status, setStatus] = useState("gathering status…")
@@ -89,6 +100,9 @@ function Home({
   // `brew bundle dump` and a picker cannot render rows it does not have yet.
   const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>([])
   const [output, setOutput] = useState<PaneState>(emptyPane)
+  // Distance from the tail. Zero follows new output; anything else pins the
+  // window while the command keeps writing above it.
+  const [outputScroll, setOutputScroll] = useState(initialOutputState)
 
   // The status bar's clock. Bumped on every flush — including empty ones — so
   // the spinner and elapsed time keep moving while brew compiles in silence.
@@ -149,6 +163,12 @@ function Home({
    * (see lib/terminal.ts), so the screen changes hands for a password prompt
    * and comes straight back.
    */
+  // Horizontal rules used to be `"─".repeat(62)`, which is a rule for exactly
+  // one terminal width: short of the edge on a wide window, wrapped onto a
+  // second row on a narrow one — and a wrapped rule pushes the footer off the
+  // bottom of the screen.
+  const rule = "─".repeat(Math.max(10, size.columns - 4))
+
   const runInPane = useCallback(
     async (label: string, run: () => Promise<number>) => {
       setBusy(true)
@@ -156,6 +176,7 @@ function Home({
       stepRef.current = null
       startedAt.current = Date.now()
       setOutput(emptyPane)
+      setOutputScroll(initialOutputState())
       setTick(0)
       setStep(null)
       setLabel(label)
@@ -222,10 +243,17 @@ function Home({
   )
 
   useKeyboard((key) => {
-    // The output pane has its own tiny binding: anything dismisses it once the
-    // command has finished.
+    // The output pane scrolls, so its bindings live in a reducer like every
+    // other screen's rather than as an inline `if` that could only dismiss.
     if (view === "output") {
-      if (!busy && (key.name === "q" || key.name === "escape" || key.name === "return")) {
+      const rows = paneRows(size.rows)
+      const { state: next, intent } = reduceOutputKey(outputScroll, key, {
+        maxOffset: maxOffset(output.lines.length, rows),
+        page: rows,
+        busy,
+      })
+      setOutputScroll(next)
+      if (intent.kind === "dismiss") {
         setView("home")
         refresh()
       }
@@ -265,11 +293,14 @@ function Home({
     // command's output is almost always the end. Fixed count, not a slice that
     // grows: a pane that changes height as output arrives drags the footer down
     // the screen on every line, which reads as flicker.
-    const rows = paneRows()
+    const rows = paneRows(size.rows)
     const pinned = pinnedSection(output.lines, rows - 1)
-    // The pin costs a row, so the tail shrinks by one when it is showing.
-    const shown = output.lines.slice(pinned === null ? -rows : -(rows - 1))
-    const hidden = output.dropped + (output.lines.length - shown.length)
+    // The pin costs a row, so the viewport shrinks by one when it is showing.
+    const viewport = pinned === null ? rows : rows - 1
+    const paneWindow = tailWindow(output.lines.length, outputScroll.offset, viewport)
+    const shown = output.lines.slice(paneWindow.start, paneWindow.end)
+    const { above, below } = hiddenCounts(paneWindow, output.lines.length, output.dropped)
+    const following = below === 0
 
     return (
       <box key="output" flexDirection="column" padding={1}>
@@ -277,7 +308,7 @@ function Home({
           <text fg={theme.blue} attributes={BOLD}>
             {status}
           </text>
-          <text fg={theme.dim}>{hidden > 0 ? `+${hidden} above` : ""}</text>
+          <text fg={theme.dim}>{above > 0 ? `↑ ${above} more` : ""}</text>
         </box>
 
         {/* Fixed height, not a box that grows with the output: a pane that
@@ -291,7 +322,7 @@ function Home({
             </box>
           )}
           {shown.map((line, index) => {
-            const { glyph, fg, text } = styleFor(line)
+            const { glyph, fg, text } = styleFor(line, size.columns)
             return (
               <box key={index} flexDirection="row">
                 <text fg={fg}>{` ${glyph} `}</text>
@@ -302,7 +333,7 @@ function Home({
         </box>
 
         <box marginTop={1} flexDirection="column">
-          <text fg={theme.dim}>{"─".repeat(62)}</text>
+          <text fg={theme.dim}>{rule}</text>
           <text fg={busy ? theme.orange : theme.bgHard}>
             {busy
               ? statusBar({
@@ -311,8 +342,16 @@ function Home({
                   elapsedMs: Date.now() - startedAt.current,
                   step,
                   activity: currentActivity(output.lines),
+                  columns: size.columns,
                 })
               : "⏎ / q — back to dotfiles"}
+          </text>
+          {/* Only worth a row once there is something below to go back to.
+              While following, the pane behaves exactly as it always did. */}
+          <text fg={following ? theme.bgHard : theme.yellow}>
+            {following
+              ? "↑↓ scroll · PgUp/PgDn page · g top"
+              : `↓ ${below} more · G / End to follow again`}
           </text>
         </box>
       </box>
@@ -425,7 +464,7 @@ function Home({
       </box>
 
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.dim}>{"─".repeat(62)}</text>
+        <text fg={theme.dim}>{rule}</text>
         {status !== "" && <text fg={busy ? theme.orange : theme.gray}>{status}</text>}
         <text fg={theme.bgHard}>↑↓ nav · a-z jump · ⏎ run · r refresh · q quit</text>
       </box>

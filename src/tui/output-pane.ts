@@ -47,9 +47,21 @@ export function pinnedSection(lines: LogEntry[], visibleCount: number): string |
   return null
 }
 
-/** Output rows kept on screen, leaving room for the header, rule and footer. */
+/**
+ * Output rows kept on screen, leaving room for the header, rule and footer.
+ *
+ * The upper clamp used to be 24, which quietly threw away most of a tall
+ * terminal: at 60 rows you got the same 24-line pane as at 32, with the rest of
+ * the window blank. There is no reason for a ceiling — the pane is already a
+ * fixed-height box, so it cannot drag the footer around whatever height it has.
+ *
+ * The floor is what needs care. It used to be 8, which OVERFLOWS a terminal
+ * shorter than 16 rows: the pane alone was taller than the window and the
+ * footer went off the bottom. Three rows is the smallest pane that still shows
+ * a section heading and a line under it, and it fits a 12-row terminal.
+ */
 export const paneRows = (rows = process.stdout.rows): number =>
-  Math.max(8, Math.min(24, (rows ?? 30) - 8))
+  Math.max(3, (rows ?? 30) - 8)
 
 /** One entry must occupy exactly one row — a wrapped line breaks the column. */
 export const truncate = (text: string, columns = process.stdout.columns): string => {

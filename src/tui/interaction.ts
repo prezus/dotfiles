@@ -13,6 +13,13 @@
 export type KeyEvent = {
   name?: string
   ctrl?: boolean
+  /**
+   * OpenTUI's ParsedKey reports the modifier separately, so an uppercase letter
+   * arrives as `{ name: "g", shift: true }` and NOT as `{ name: "G" }`.
+   * Matching on a capital letter therefore never fires — which is how `G` for
+   * "jump to the bottom" would have silently done nothing.
+   */
+  shift?: boolean
 }
 
 const isQuit = (key: KeyEvent): boolean =>
@@ -256,6 +263,68 @@ export function reduceReconcileKey(
     return { state: cycle(state, items, cursor, 1), intent: { kind: "none" } }
   if (key.name === "left" || key.name === "h")
     return { state: cycle(state, items, cursor, -1), intent: { kind: "none" } }
+
+  return { state, intent: { kind: "none" } }
+}
+
+// ─── output pane ────────────────────────────────────────────────────
+
+/**
+ * Scroll position of the output pane, as distance from the tail.
+ *
+ * Zero means following: new lines push the view along, which is what you want
+ * while a command is running. Anything else pins the window to the lines you
+ * scrolled back to, and output keeps arriving above without yanking the screen
+ * out from under you — the behaviour every pager and terminal already has, and
+ * the reason the pane kept 500 lines of history it gave you no way to reach.
+ */
+export type OutputState = { offset: number }
+
+export type OutputIntent =
+  | { kind: "none" }
+  /** Close the pane and go back to the dashboard. */
+  | { kind: "dismiss" }
+
+export type OutputKeyResult = { state: OutputState; intent: OutputIntent }
+
+export const initialOutputState = (): OutputState => ({ offset: 0 })
+
+/**
+ * What a keypress does to the output pane.
+ *
+ * `busy` gates dismissal only. Scrolling stays live while a command runs, which
+ * is precisely when the history is worth reading — watching a `brew upgrade`
+ * scroll past is the case that motivated this.
+ *
+ * `maxOffset` comes from the caller because it depends on the rendered viewport
+ * height, which is a drawing concern; the reducer just refuses to leave the
+ * range it is handed.
+ */
+export function reduceOutputKey(
+  state: OutputState,
+  key: KeyEvent,
+  view: { maxOffset: number; page: number; busy: boolean },
+): OutputKeyResult {
+  const limit = Math.max(0, view.maxOffset)
+  const page = Math.max(1, view.page)
+  const to = (offset: number): OutputKeyResult => ({
+    state: { offset: clamp(offset, limit) },
+    intent: { kind: "none" },
+  })
+
+  // Scrolling up means moving AWAY from the tail, so the offset grows.
+  if (isUp(key)) return to(state.offset + 1)
+  if (isDown(key)) return to(state.offset - 1)
+  if (key.name === "pageup") return to(state.offset + page)
+  if (key.name === "pagedown") return to(state.offset - page)
+  // `g`/`home` to the oldest line retained, `G`/`end` back to following.
+  if (key.name === "end" || (key.name === "g" && key.shift === true)) return to(0)
+  if (key.name === "g" || key.name === "home") return to(limit)
+
+  // Dismissal is last: `q` and Escape only mean "close" once nothing is
+  // running, and while busy they should not silently do nothing else either.
+  if (!view.busy && (isQuit(key) || key.name === "return"))
+    return { state, intent: { kind: "dismiss" } }
 
   return { state, intent: { kind: "none" } }
 }
