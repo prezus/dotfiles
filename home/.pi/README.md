@@ -23,26 +23,25 @@ and `themes/` are symlinked from here, so `~/.pi/agent` remains a real directory
 
 ## Extensions
 
-Pi packages are installed with `pi install <source>` (`npm:`, `git:`, `https:`, or a
-local path), and the source is recorded in `agent/settings.json` — which **is** tracked
-here, so the list is committed automatically.
+`agent/settings.json` is the manifest. Every npm source has an exact version. Bun installs
+those sources into the ignored `~/.pi/agent/npm/` runtime directory; `dotfiles pi install`
+rebuilds that directory on a new machine.
 
-**Pi owns the installs, not us.** User-scoped packages land in `~/.pi/agent/npm/` (npm
-sources) and `~/.pi/agent/git/<host>/<path>` (git sources); project-scoped ones go to
-`.pi/npm/` and `.pi/git/` inside that project. None of it is stowed or tracked.
+```sh
+dotfiles pi install
+dotfiles pi status
+dotfiles pi update
+dotfiles pi verify
+```
 
-So this is the fisher shape: `fish_plugins` is a manifest and `fisher update` restores.
-For Pi the manifest is `settings.json` and the restore is `pi update --extensions`, which
-`dotfiles update` runs. Pi auto-installs missing packages on startup only for **project**
-settings, after the project is trusted — user-scoped packages are not documented to
-self-heal, which is why the update step matters on a fresh machine.
-`dotfiles doctor` reports the installed count, so a machine holding the list but not the
-packages is visible rather than silent.
+`update` looks up current registry releases and asks before changing each tracked pin.
+`dotfiles update --all` is the explicit non-interactive path for advancing all pins.
+`doctor` compares the manifest with each installed package's metadata rather than scraping
+`pi list` output.
 
-> **Security.** Pi's own docs are blunt about this: packages run with full system access,
-> extensions execute arbitrary code, and skills can instruct the model to run executables.
-> Because the list is committed and restored automatically on every machine, review a
-> third-party package before `pi install` — it will follow you everywhere.
+Pi packages execute with the user's full permissions. Review the exact published release
+and its runtime dependencies before adding a pin. Registry signatures establish which
+bytes the registry served; they do not establish that those bytes are trustworthy.
 
 ## Skills — consumed, not owned
 

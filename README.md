@@ -12,7 +12,7 @@ only **deploys** them.
 
 ```
 dotfiles              # bash shim — ensures bun exists, then runs src/cli.ts
-src/                  # the CLI (TypeScript): init / update / doctor / skills / stow
+src/                  # the CLI (TypeScript): init / update / doctor / skills / Pi plugins / stow
 home/                 # stowed into $HOME via `stow -t "$HOME" home`
   .config/<tool>/     # per-tool config (fish, git, nvim, …)
   .local/bin/         # personal scripts, on PATH
@@ -39,7 +39,7 @@ xcode-select --install                 # git + build tools
 # 1. Clone over HTTPS (public) and run the installer
 git clone https://github.com/prezus/dotfiles.git ~/Projects/dotfiles
 cd ~/Projects/dotfiles
-./dotfiles init                        # brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills
+./dotfiles init                        # brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills
 #    (init clones prezus/skills itself, and installs the 1Password CLI/app via brew)
 
 # 2. On an ALREADY-configured machine, first stow needs to adopt existing files:
@@ -81,6 +81,21 @@ Drift is checked in both directions, because neither command sees the other's:
 The second is the one that bites: an ad-hoc `brew install` works fine here and is simply
 missing on the next machine. Things that should never be tracked (VS Code extensions,
 Homebrew's `node`) go in `packages/bundle.ignore` with a comment explaining why.
+
+## Pi plugins
+
+`home/.pi/agent/settings.json` is the plugin manifest. Every npm source carries an exact
+version; local installs under `~/.pi/agent/npm/` remain ignored runtime state.
+
+```sh
+dotfiles pi install                    # reconcile local installs to tracked pins
+dotfiles pi status                     # compare declarations with installed versions
+dotfiles pi update                     # review available updates one by one
+dotfiles pi verify                     # fail on floating, missing, or mismatched plugins
+```
+
+`dotfiles update` offers Pi plugins as a default-off task. `--all` advances every available
+plugin explicitly; normal interactive updates ask before changing each pin.
 
 ## Skills install model: one directory, all agents
 

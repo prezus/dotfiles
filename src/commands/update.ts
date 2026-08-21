@@ -9,6 +9,7 @@ import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import { isDirectory, pathExists } from "../lib/fs.ts"
 import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
 import { getStepSink, isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { piPlugins } from "./pi.ts"
 import { skills } from "./skills.ts"
 import { stow } from "./stow.ts"
 
@@ -31,6 +32,12 @@ export const UPDATE_TASKS: UpdateTask[] = [
     default: true,
   },
   { id: "stow", title: "Re-stow", description: "re-symlink home/ → $HOME", default: true },
+  {
+    id: "pi",
+    title: "Pi plugins",
+    description: "review and advance tracked plugin pins",
+    default: false,
+  },
   { id: "skills", title: "Vendored skills", description: "re-sync from upstream", default: false },
 ]
 
@@ -84,12 +91,6 @@ export async function updateExtras(runtime: UpdateRuntime = defaultUpdateRuntime
       await runOne("fisher", ["fish", "-c", "fisher update"])
       if (!failed.includes("fisher")) printSuccess("fisher plugins updated")
     }
-  }
-
-  // Pi extensions are recorded in stowed settings, but the installs are local.
-  if (await runtime.commandExists("pi")) {
-    printInfo("pi update --extensions...")
-    await runOne("pi extensions", ["pi", "update", "--extensions"])
   }
 
   const vp = join(env.get("HOME") ?? HOME, ".vite-plus", "bin", "vp")
@@ -216,6 +217,15 @@ export async function update(argv: string[] = []): Promise<number> {
   }
   if (chosen.has("stow")) {
     steps.push({ id: "stow", title: "Re-stow", run: async () => ({ ok: (await stow([])) === 0 }) })
+  }
+  if (chosen.has("pi")) {
+    steps.push({
+      id: "pi",
+      title: "Pi plugins",
+      run: async () => ({
+        ok: (await piPlugins(["update", ...(argv.includes("--all") ? ["--all"] : [])])) === 0,
+      }),
+    })
   }
   if (chosen.has("skills")) {
     steps.push({

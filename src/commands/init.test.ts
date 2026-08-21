@@ -9,6 +9,7 @@ describe("init contract", () => {
     expect(indexOf("rust")).toBeLessThan(indexOf("packages"))
     expect(indexOf("rust-esp")).toBeGreaterThan(indexOf("packages"))
     expect(indexOf("stow")).toBeGreaterThan(indexOf("viteplus"))
+    expect(indexOf("pi")).toBeGreaterThan(indexOf("stow"))
     expect(indexOf("skills")).toBe(initSteps().length - 1)
   })
 

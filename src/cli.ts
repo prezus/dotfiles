@@ -34,14 +34,14 @@ type Command = {
 const COMMANDS: Command[] = [
   {
     name: "init",
-    description: "Full setup: brew/rust/packages/bun/vite+/Plannotator/stow/ssh/fish/skills",
-    help: "Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills",
+    description: "Full setup: brew/rust/packages/bun/vite+/Plannotator/stow/Pi/ssh/fish/skills",
+    help: "Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills",
     run: async () => (await import("./commands/init.ts")).init(),
   },
   {
     name: "update",
-    description: "Update everything: repos, brew, rust/cargo/go/bun/fisher/vite+, skills",
-    help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → skills sync",
+    description: "Update repos, brew, language tools, stow, Pi plugins, and skills",
+    help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → Pi plugins → skills sync",
     run: async (args) => (await import("./commands/update.ts")).update(args),
   },
   {
@@ -110,6 +110,11 @@ const COMMANDS: Command[] = [
     // so fish never suggested it. Now that it is real TypeScript, list it.
     description: "install | update | status | verify (from prezus/skills)",
     run: async (args) => (await import("./commands/skills.ts")).skills(args),
+  },
+  {
+    name: "pi",
+    description: "install | update | status | verify pinned Pi plugins",
+    run: async (args) => (await import("./commands/pi.ts")).piPlugins(args),
   },
   {
     name: "check-packages",

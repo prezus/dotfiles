@@ -55,7 +55,7 @@ dotfiles/
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Tiling WM | `home/.config/aerospace/aerospace.toml` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
-| Pi agent config | `home/.pi/agent/` — settings.json + themes only; auth.json and sessions/ stay local |
+| Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Wire a new machine | `dotfiles init` |
 
 ## CONVENTIONS
@@ -90,8 +90,8 @@ dotfiles/
 ```
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
-dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → ssh → fish → skills
-dotfiles update          Multi-select: repos / brew / language tools / re-stow / skills
+dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills
+dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins / skills
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
                          warning in place); plain lines when piped or --plain.
@@ -107,6 +107,7 @@ dotfiles plannotator     Install the Plannotator CLI to ~/.local/bin
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
 dotfiles skills          install | update | status | verify   (from prezus/skills)
+dotfiles pi              install | update | status | verify   (exact pins in Pi settings)
 dotfiles check-packages / retry-failed / edit
 ```
 

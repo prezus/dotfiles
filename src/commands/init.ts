@@ -14,6 +14,7 @@ import { fish } from "./fish.ts"
 import { ensureHomebrew } from "./homebrew.ts"
 import { installPackages } from "./packages.ts"
 import { plannotator } from "./plannotator.ts"
+import { piPlugins } from "./pi.ts"
 import { applyRustList, installRustEsp, installRustup } from "./rust.ts"
 import { skills } from "./skills.ts"
 import { ssh } from "./ssh.ts"
@@ -70,6 +71,11 @@ export function initSteps(): Step[] {
       title: "Stow dotfiles",
       required: true,
       run: () => fromExitCode(() => stow([])),
+    },
+    {
+      id: "pi",
+      title: "Pi plugins",
+      run: () => fromExitCode(() => piPlugins(["install"])),
     },
     { id: "ssh", title: "SSH config", run: () => fromExitCode(ssh) },
     { id: "fish", title: "Fish shell", run: () => fromExitCode(fish) },

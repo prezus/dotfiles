@@ -13,6 +13,7 @@
 // touch one directory instead of the whole command.
 import { Result } from "better-result"
 import { Schema } from "effect"
+import { readPiPluginStatuses } from "../pi.ts"
 import { readdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
@@ -252,17 +253,23 @@ const agentChecks: Check[] = AGENT_TOOLS.map(({ bin, label, formula }) => ({
     if (!path) return { status: "warn", message: `${label} — missing (brew install ${formula})` }
     const version = firstLine((await probe([bin, "--version"])).stdout)
 
-    // Pi extensions live in settings.json, which is stowed — so the LIST is
-    // tracked while the installs are not, exactly like fisher plugins. Report
-    // the count so a machine missing them is visible rather than silent.
+    // Pi extensions live in stowed settings while their installations are
+    // machine-local. Compare declarations to package metadata instead of
+    // counting `pi list` lines, which prints a source and path for each entry.
     if (bin === "pi") {
-      const listed = await probe(["pi", "list"])
-      const count = listed.stdout
-        .split("\n")
-        .filter((l) => l.trim() !== "" && !/no packages installed/i.test(l)).length
+      const plugins = await readPiPluginStatuses()
+      if (plugins._tag === "err") {
+        return { status: "warn", message: `${label} — ${plugins.error.message}` }
+      }
+      const drifted = plugins.value.filter(
+        (plugin) => plugin.version === undefined || plugin.version !== plugin.installedVersion,
+      )
       return {
-        status: "ok",
-        message: `${label} — ${version || "installed"} · ${count} extension(s) (${path})`,
+        status: drifted.length === 0 ? "ok" : "warn",
+        message:
+          drifted.length === 0
+            ? `${label} — ${version || "installed"} · ${plugins.value.length} plugin(s) (${path})`
+            : `${label} — ${drifted.length} plugin(s) missing or off-pin (dotfiles pi install)`,
       }
     }
     return { status: "ok", message: `${label} — ${version || "installed"} (${path})` }
