@@ -362,7 +362,7 @@ function Home({
     const following = below === 0
 
     return (
-      <box key="output" flexDirection="column" padding={1}>
+      <box key="output" flexDirection="column" padding={1} flexGrow={1}>
         <box flexDirection="row" justifyContent="space-between">
           <text fg={theme.blue} attributes={BOLD}>
             {status}
@@ -382,7 +382,7 @@ function Home({
           ))}
         </box>
 
-        <box marginTop={1} flexDirection="column">
+        <box marginTop="auto" flexDirection="column">
           <text fg={theme.dim}>{rule}</text>
           <text fg={busy ? theme.orange : theme.bgHard}>
             {busy
@@ -466,7 +466,7 @@ function Home({
   )
 
   return (
-    <box key="home" flexDirection="column" padding={1}>
+    <box key="home" flexDirection="column" padding={1} flexGrow={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text fg={theme.blue} attributes={BOLD}>
           {`dotfiles ${VERSION}`}
@@ -510,7 +510,7 @@ function Home({
         })}
       </box>
 
-      <box marginTop={1} flexDirection="column">
+      <box marginTop="auto" flexDirection="column">
         <text fg={theme.dim}>{rule}</text>
         {status !== "" && <text fg={busy ? theme.orange : theme.gray}>{status}</text>}
         <text fg={theme.bgHard}>↑↓ nav · a-z jump · ⏎ run · r refresh · q quit</text>

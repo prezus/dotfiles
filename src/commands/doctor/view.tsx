@@ -185,7 +185,7 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
           : "all clear"
 
   return (
-    <box flexDirection="column" padding={1}>
+    <box flexDirection="column" padding={1} flexGrow={1}>
       <box flexDirection="row" justifyContent="space-between">
         <text fg={theme.blue} attributes={BOLD}>
           dotfiles doctor
@@ -250,7 +250,7 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
         )
       })}
 
-      <box marginTop={1} flexDirection="column">
+      <box marginTop="auto" flexDirection="column">
         <text fg={theme.dim}>{"─".repeat(Math.max(10, size.columns - 4))}</text>
         {(above > 0 || below > 0) && (
           <text fg={theme.dim}>
