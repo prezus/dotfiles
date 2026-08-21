@@ -5,118 +5,79 @@ import { tmpdir } from "node:os"
 import type { RunOptions } from "../lib/exec.ts"
 import { installPackages, type PackageRuntime } from "./packages.ts"
 
-const dirs: string[] = []
+const directories: string[] = []
 
-const FORMULAE_ONLY = 'brew "git"\ngo "golang.org/x/tools/gopls"\ncargo "cargo-expand"\n'
-
-async function bundleFile(contents = FORMULAE_ONLY): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "dotfiles-packages-"))
-  dirs.push(dir)
-  const path = join(dir, "bundle")
+async function bundleFile(contents: string): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "dotfiles-packages-"))
+  directories.push(directory)
+  const path = join(directory, "bundle")
   await Bun.write(path, contents)
   return path
 }
 
-/** A runtime that records every call; `codes` supplies each exit status in order. */
-function recorder(codes: number[]) {
+function recorder(codes: number[], bundleCheckOutput = "") {
   const calls: { command: string[]; opts?: RunOptions }[] = []
   const sudoReasons: string[] = []
-  let released = 0
+  let releases = 0
   const runtime: PackageRuntime = {
     commandExists: async () => true,
     runInteractiveCode: async (command, opts) => {
       calls.push({ command, opts })
       return codes[calls.length - 1] ?? 0
     },
+    probe: async () => ({
+      code: bundleCheckOutput === "" ? 0 : 1,
+      stdout: bundleCheckOutput,
+      stderr: "",
+      ok: bundleCheckOutput === "",
+    }),
     warmSudo: async (reason) => {
       sudoReasons.push(reason)
-      return { granted: true, release: () => void released++ }
+      return { granted: true, release: () => void releases++ }
     },
   }
-  return { runtime, calls, sudoReasons, released: () => released }
+  return { runtime, calls, sudoReasons, releases: () => releases }
 }
 
 afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
 describe("installPackages", () => {
-  it("leaves a satisfied Brewfile untouched", async () => {
+  it("does not install when Homebrew reports the bundle satisfied", async () => {
     const { runtime, calls } = recorder([0])
-    const path = await bundleFile()
-
-    const outcome = await installPackages({ bundlePath: path, runtime })
-
-    expect(outcome.ok).toBe(true)
-    expect(calls.map((c) => c.command)).toEqual([
+    const path = await bundleFile('brew "git"\n')
+    expect((await installPackages({ bundlePath: path, runtime })).ok).toBe(true)
+    expect(calls.map((call) => call.command)).toEqual([
       ["brew", "bundle", "check", "--verbose", `--file=${path}`],
     ])
   })
 
-  it("delegates an unsatisfied Brewfile to Homebrew Bundle so every directive is installed", async () => {
-    const { runtime, calls } = recorder([1, 0])
-    const path = await bundleFile()
-
-    const outcome = await installPackages({ bundlePath: path, runtime })
-
-    expect(outcome.ok).toBe(true)
-    expect(calls.map((c) => c.command)).toEqual([
-      ["brew", "bundle", "check", "--verbose", `--file=${path}`],
-      ["brew", "bundle", "install", `--file=${path}`],
-    ])
-  })
-})
-
-// The regression these guard: a cask with a `pkg` payload calls sudo, sudo
-// prompts on the CONTROLLING terminal, and a captured child's controlling
-// terminal is the pane's PTY — invisible, and impossible to type at. The
-// install pass must therefore ask for the real terminal; the read-only check
-// pass must not, or it would suspend the UI for nothing.
-describe("installPackages — the terminal a pass runs on", () => {
-  it("keeps the read-only check captured", async () => {
-    const { runtime, calls } = recorder([1, 0])
-
-    await installPackages({ bundlePath: await bundleFile(), runtime })
-
+  it("runs an unsatisfied formula bundle on the real terminal without asking for sudo", async () => {
+    const { runtime, calls, sudoReasons } = recorder(
+      [1, 0],
+      "→ Formula ampcode/tap/ampcode needs to be installed or updated.\n",
+    )
+    await installPackages({ bundlePath: await bundleFile('brew "git"\n'), runtime })
     expect(calls[0]?.opts?.needsStdin).toBeUndefined()
-  })
-
-  it("hands the install pass the real terminal, so a sudo prompt is reachable", async () => {
-    const { runtime, calls } = recorder([1, 0])
-
-    await installPackages({ bundlePath: await bundleFile(), runtime })
-
     expect(calls[1]?.opts?.needsStdin).toBe(true)
-  })
-})
-
-describe("installPackages — administrator rights", () => {
-  it("warms sudo before pouring casks, and names how many", async () => {
-    const { runtime, sudoReasons, released } = recorder([1, 0])
-    const path = await bundleFile(`${FORMULAE_ONLY}cask "ghostty"\ncask "orbstack"\n`)
-
-    await installPackages({ bundlePath: path, runtime })
-
-    expect(sudoReasons).toHaveLength(1)
-    expect(sudoReasons[0]).toContain("2 cask(s)")
-    expect(released()).toBe(1)
-  })
-
-  it("never asks for a password a formula-only bundle will not need", async () => {
-    const { runtime, sudoReasons } = recorder([1, 0])
-
-    await installPackages({ bundlePath: await bundleFile(), runtime })
-
     expect(sudoReasons).toEqual([])
   })
 
-  it("stops the keepalive even when the install fails", async () => {
-    const { runtime, released } = recorder([1, 1])
-    const path = await bundleFile(`${FORMULAE_ONLY}cask "ghostty"\n`)
-
-    const outcome = await installPackages({ bundlePath: path, runtime })
-
+  it("warms sudo for casks and releases it even when installation fails", async () => {
+    const { runtime, sudoReasons, releases } = recorder(
+      [1, 1],
+      [
+        "→ Cask ghostty needs to be installed or updated.",
+        "→ Cask orbstack needs to be installed or updated.",
+      ].join("\n"),
+    )
+    const outcome = await installPackages({
+      bundlePath: await bundleFile('cask "ghostty"\ncask "orbstack"\n'),
+      runtime,
+    })
     expect(outcome.ok).toBe(false)
-    expect(released()).toBe(1)
+    expect(sudoReasons[0]).toContain("2 cask(s)")
+    expect(releases()).toBe(1)
   })
 })

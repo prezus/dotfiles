@@ -17,6 +17,21 @@ export type BrewEntry = {
 
 const DIRECTIVE = /^(brew|cask|tap|go|cargo|vscode|mas)\s+"([^"]+)"(?:\s*,\s*(.*))?$/
 
+const parseEntryKind = (value: string): EntryKind | undefined => {
+  switch (value) {
+    case "brew":
+    case "cask":
+    case "tap":
+    case "go":
+    case "cargo":
+    case "vscode":
+    case "mas":
+      return value
+    default:
+      return undefined
+  }
+}
+
 export function parseBrewfile(text: string): BrewEntry[] {
   const entries: BrewEntry[] = []
   for (const raw of text.split("\n")) {
@@ -24,9 +39,11 @@ export function parseBrewfile(text: string): BrewEntry[] {
     if (line === "" || line.startsWith("#")) continue
     const m = DIRECTIVE.exec(line)
     if (!m) continue
-    const [, kind, name, options] = m
-    if (!kind || !name) continue
-    entries.push({ kind: kind as EntryKind, name, options, line })
+    const [, rawKind, name, options] = m
+    if (!rawKind || !name) continue
+    const kind = parseEntryKind(rawKind)
+    if (!kind) continue
+    entries.push({ kind, name, options, line })
   }
   return entries
 }

@@ -8,13 +8,13 @@
 // Non-interactive callers still get the help text — see src/cli.ts. Scripts and
 // pipes must never land in a full-screen app.
 import { createCliRenderer } from "@opentui/core"
-import { createRoot, useKeyboard } from "@opentui/react"
+import { createRoot, useKeyboard, useRenderer, useSelectionHandler } from "@opentui/react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { DoctorView } from "../commands/doctor/view.tsx"
 import { countCriticalIssues, runChecks, type CompletedCheck } from "../commands/doctor/checks.ts"
 import { UPDATE_TASKS, update } from "../commands/update.ts"
 import { VERSION } from "../lib/env.ts"
-import { setLogSink, setStepSink, type StepEvent } from "../lib/ui.ts"
+import { setLogSink, setStepSink, setTerminalSink, type LogLevel, type StepEvent } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import {
   initialHomeState,
@@ -22,20 +22,10 @@ import {
   reduceHomeKey,
   reduceOutputKey,
 } from "./interaction.ts"
-import { hiddenCounts, maxOffset, tailWindow } from "./scroll.ts"
+import { copySelection, isCopyKey } from "./clipboard.ts"
 import { useTerminalSize } from "./use-terminal-size.ts"
-import {
-  currentActivity,
-  emptyPane,
-  FLUSH_MS,
-  mergeBatch,
-  paneRows,
-  pinnedSection,
-  statusBar,
-  styleFor,
-  type LogEntry,
-  type PaneState,
-} from "./output-pane.ts"
+import { FLUSH_MS, paneRows, statusBar } from "./output-pane.ts"
+import { TerminalSession, type TerminalFrame, type TerminalRun } from "./terminal-session.ts"
 import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
@@ -45,7 +35,7 @@ import { applyReconcile, collectReconcileRows } from "../commands/reconcile.ts"
 export type HomeCommand = {
   name: string
   description: string
-  /** Runs line-oriented output; needs the terminal handed over. */
+  /** Runs with tool output rendered in the embedded terminal pane. */
   run: () => Promise<number>
 }
 
@@ -54,6 +44,45 @@ type Summary = {
   stow: StowPlan | null
 }
 
+const EMPTY_TERMINAL_FRAME: TerminalFrame = { rows: [], scrollbackRows: 0 }
+const terminalEncoder = new TextEncoder()
+
+const LOG_STYLE = {
+  header: { glyph: "▸", color: theme.blue },
+  ok: { glyph: "✓", color: theme.green },
+  warn: { glyph: "⚠", color: theme.yellow },
+  error: { glyph: "✗", color: theme.red },
+  info: { glyph: "ℹ", color: theme.aqua },
+  raw: { glyph: "", color: theme.fgMuted },
+} satisfies Record<LogLevel, { glyph: string; color: string }>
+
+const ansiForeground = (hex: string): string => {
+  const red = Number.parseInt(hex.slice(1, 3), 16)
+  const green = Number.parseInt(hex.slice(3, 5), 16)
+  const blue = Number.parseInt(hex.slice(5, 7), 16)
+  return `\x1b[38;2;${red};${green};${blue}m`
+}
+
+const writeLog = (session: TerminalSession, level: LogLevel, message: string): void => {
+  const style = LOG_STYLE[level]
+  const prefix = style.glyph === "" ? "" : `${style.glyph} `
+  session.write(terminalEncoder.encode(`${ansiForeground(style.color)}${prefix}${message}\x1b[0m\r\n`))
+}
+
+function TerminalRunView({ run }: { run: TerminalRun }) {
+  const foreground = run.foreground ?? theme.fgMuted
+  const background = run.background ?? theme.bg
+  const attributes = run.attributes ?? 0
+  return run.hyperlink ? (
+    <a href={run.hyperlink} fg={foreground} bg={background} attributes={attributes}>
+      {run.text}
+    </a>
+  ) : (
+    <span fg={foreground} bg={background} attributes={attributes}>
+      {run.text}
+    </span>
+  )
+}
 
 export async function runHomeTui(commands: HomeCommand[]): Promise<number> {
   const renderer = await createCliRenderer()
@@ -80,10 +109,9 @@ function Home({
   commands: HomeCommand[]
   onExit: (code: number) => void
 }) {
-  // Re-renders the whole dashboard when the window changes size, which is what
-  // makes paneRows/truncate recompute — they always read the terminal, but
-  // nothing used to tell React that the answer had changed.
+  // Re-render and resize the embedded terminal when the window changes.
   const size = useTerminalSize()
+  const renderer = useRenderer()
   const [state, setState] = useState(initialHomeState)
   const [summary, setSummary] = useState<Summary>({ checks: null, stow: null })
   const [status, setStatus] = useState("gathering status…")
@@ -99,9 +127,10 @@ function Home({
   // Gathered BEFORE the picker mounts, because computing drift shells out to
   // `brew bundle dump` and a picker cannot render rows it does not have yet.
   const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>([])
-  const [output, setOutput] = useState<PaneState>(emptyPane)
+  const [terminalFrame, setTerminalFrame] = useState<TerminalFrame>(EMPTY_TERMINAL_FRAME)
+  const terminalRef = useRef<TerminalSession | null>(null)
   // Distance from the tail. Zero follows new output; anything else pins the
-  // window while the command keeps writing above it.
+  // libghostty viewport while the command keeps writing.
   const [outputScroll, setOutputScroll] = useState(initialOutputState)
 
   // The status bar's clock. Bumped on every flush — including empty ones — so
@@ -114,10 +143,9 @@ function Home({
   const startedAt = useRef(0)
   const stepRef = useRef<StepEvent | null>(null)
 
-  // Output is buffered here and drained on a timer. Writing straight to state
-  // meant one React reconcile per line of child output, which at brew's output
-  // rate strobed the pane instead of filling it.
-  const pending = useRef<LogEntry[]>([])
+  // The PTY feeds libghostty immediately, while React receives an immutable
+  // cell snapshot at a bounded frame rate. This keeps query responses timely
+  // without reconciling once per chunk during a noisy brew upgrade.
   const flushTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const flushPending = useCallback(() => {
@@ -126,10 +154,8 @@ function Home({
       setStep(stepRef.current)
       stepRef.current = null
     }
-    if (pending.current.length === 0) return
-    const batch = pending.current
-    pending.current = []
-    setOutput((prev) => mergeBatch(prev, batch))
+    const session = terminalRef.current
+    if (session) setTerminalFrame(session.snapshot())
   }, [])
 
   const stopFlushing = useCallback(() => {
@@ -137,8 +163,25 @@ function Home({
     flushTimer.current = null
   }, [])
 
-  // A command still running when the app exits must not leave a timer behind.
-  useEffect(() => stopFlushing, [stopFlushing])
+  // A command still running when the app exits must release its native VT.
+  useEffect(
+    () => () => {
+      stopFlushing()
+      setTerminalSink(null)
+      setLogSink(null)
+      setStepSink(null)
+      terminalRef.current?.close()
+      terminalRef.current = null
+    },
+    [stopFlushing],
+  )
+
+  useEffect(() => {
+    const session = terminalRef.current
+    if (!session) return
+    session.resize(Math.max(20, size.columns - 6), paneRows(size.rows))
+    setTerminalFrame(session.snapshot())
+  }, [size.columns, size.rows])
 
   const names = commands.map((c) => c.name)
 
@@ -153,6 +196,13 @@ function Home({
   }, [])
 
   useEffect(refresh, [refresh])
+
+  // Ghostty's native selection is unavailable while OpenTUI owns the mouse.
+  // Copy as soon as OpenTUI finishes a drag, then also support copy shortcuts
+  // in terminals that forward them to the application.
+  useSelectionHandler((selection) => {
+    copySelection(selection, renderer)
+  })
 
   /**
    * EVERY command runs here, in the pane. There is deliberately no list of
@@ -172,19 +222,24 @@ function Home({
   const runInPane = useCallback(
     async (label: string, run: () => Promise<number>) => {
       setBusy(true)
-      pending.current = []
       stepRef.current = null
       startedAt.current = Date.now()
-      setOutput(emptyPane)
+      terminalRef.current?.close()
+      const session = new TerminalSession({
+        columns: Math.max(20, size.columns - 6),
+        rows: paneRows(size.rows),
+        maxScrollback: 500,
+      })
+      terminalRef.current = session
+      setTerminalFrame(session.snapshot())
       setOutputScroll(initialOutputState())
       setTick(0)
       setStep(null)
       setLabel(label)
       setView("output")
       setStatus(`running ${label}…`)
-      setLogSink((level, message, opts) => {
-        pending.current.push({ level, message, transient: opts?.transient === true })
-      })
+      setTerminalSink(session)
+      setLogSink((level, message) => writeLog(session, level, message))
       setStepSink((event) => {
         stepRef.current = event
       })
@@ -195,14 +250,15 @@ function Home({
       } catch (error) {
         setStatus(`${label} failed: ${String(error)}`)
       } finally {
+        setTerminalSink(null)
         setLogSink(null)
         setStepSink(null)
         stopFlushing()
-        flushPending() // whatever arrived inside the last window
+        flushPending()
         setBusy(false)
       }
     },
-    [flushPending, stopFlushing],
+    [flushPending, size.columns, size.rows, stopFlushing],
   )
 
   const runCommand = useCallback(
@@ -243,16 +299,27 @@ function Home({
   )
 
   useKeyboard((key) => {
+    if (isCopyKey(key)) {
+      const selection = renderer.getSelection()
+      if (selection) copySelection(selection, renderer)
+      return
+    }
+
     // The output pane scrolls, so its bindings live in a reducer like every
     // other screen's rather than as an inline `if` that could only dismiss.
     if (view === "output") {
       const rows = paneRows(size.rows)
       const { state: next, intent } = reduceOutputKey(outputScroll, key, {
-        maxOffset: maxOffset(output.lines.length, rows),
+        maxOffset: terminalFrame.scrollbackRows,
         page: rows,
         busy,
       })
       setOutputScroll(next)
+      if (next.offset !== outputScroll.offset) {
+        terminalRef.current?.scrollToOffset(next.offset)
+        const session = terminalRef.current
+        if (session) setTerminalFrame(session.snapshot())
+      }
       if (intent.kind === "dismiss") {
         setView("home")
         refresh()
@@ -289,17 +356,9 @@ function Home({
   // update views get for free by being different component types.
 
   if (view === "output") {
-    // Keep the tail visible rather than the head — the interesting part of a
-    // command's output is almost always the end. Fixed count, not a slice that
-    // grows: a pane that changes height as output arrives drags the footer down
-    // the screen on every line, which reads as flicker.
     const rows = paneRows(size.rows)
-    const pinned = pinnedSection(output.lines, rows - 1)
-    // The pin costs a row, so the viewport shrinks by one when it is showing.
-    const viewport = pinned === null ? rows : rows - 1
-    const paneWindow = tailWindow(output.lines.length, outputScroll.offset, viewport)
-    const shown = output.lines.slice(paneWindow.start, paneWindow.end)
-    const { above, below } = hiddenCounts(paneWindow, output.lines.length, output.dropped)
+    const above = Math.max(0, terminalFrame.scrollbackRows - outputScroll.offset)
+    const below = outputScroll.offset
     const following = below === 0
 
     return (
@@ -311,25 +370,16 @@ function Home({
           <text fg={theme.dim}>{above > 0 ? `↑ ${above} more` : ""}</text>
         </box>
 
-        {/* Fixed height, not a box that grows with the output: a pane that
-            changes size drags the rule and footer down the screen on every
-            batch, which is most of what read as jumping. */}
+        {/* libghostty supplies an exact cell grid, so cursor movement, colour,
+            wide characters and redraws remain inside this fixed-height pane. */}
         <box flexDirection="column" marginTop={1} height={rows}>
-          {pinned !== null && (
-            <box flexDirection="row">
-              <text fg={theme.dim}>{" ▸ "}</text>
-              <text fg={theme.dim}>{pinned}</text>
-            </box>
-          )}
-          {shown.map((line, index) => {
-            const { glyph, fg, text } = styleFor(line, size.columns)
-            return (
-              <box key={index} flexDirection="row">
-                <text fg={fg}>{` ${glyph} `}</text>
-                <text fg={fg}>{text}</text>
-              </box>
-            )
-          })}
+          {terminalFrame.rows.map((row, rowIndex) => (
+            <text key={rowIndex} selectable>
+              {row.runs.map((run, runIndex) => (
+                <TerminalRunView key={runIndex} run={run} />
+              ))}
+            </text>
+          ))}
         </box>
 
         <box marginTop={1} flexDirection="column">
@@ -341,17 +391,14 @@ function Home({
                   tick,
                   elapsedMs: Date.now() - startedAt.current,
                   step,
-                  activity: currentActivity(output.lines),
                   columns: size.columns,
                 })
               : "⏎ / q — back to dotfiles"}
           </text>
-          {/* Only worth a row once there is something below to go back to.
-              While following, the pane behaves exactly as it always did. */}
           <text fg={following ? theme.bgHard : theme.yellow}>
             {following
-              ? "↑↓ scroll · PgUp/PgDn page · g top"
-              : `↓ ${below} more · G / End to follow again`}
+              ? "↑↓ scroll · PgUp/PgDn page · g top · drag copies"
+              : `↓ ${below} more · G / End to follow again · drag copies`}
           </text>
         </box>
       </box>

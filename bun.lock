@@ -9,6 +9,7 @@
         "@opentui/react": "0.4.5",
         "better-result": "^2.10.0",
         "effect": "^3.22.1",
+        "libghostty-vt": "0.6.3",
         "react": "19.2.8",
       },
       "devDependencies": {
@@ -148,6 +149,8 @@
     "fast-check": ["fast-check@3.23.2", "", { "dependencies": { "pure-rand": "^6.1.0" } }, "sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A=="],
 
     "get-east-asian-width": ["get-east-asian-width@1.6.0", "", {}, "sha512-QRbvDIbx6YklUe6RxeTeleMR0yv3cYH6PsPZHcnVn7xv7zO1BHN8r0XETu8n6Ye3Q+ahtSarc3WgtNWmehIBfA=="],
+
+    "libghostty-vt": ["libghostty-vt@0.6.3", "", {}, "sha512-kGWScMlGTx5BIzRymUtoQ5zfv32SO1MuO4fYB2WwFcclB0BqpzzIy3qnezUj7wUpMgH/QIbTwMPQc9NNDnEH2Q=="],
 
     "marked": ["marked@17.0.1", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg=="],
 

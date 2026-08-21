@@ -7,7 +7,7 @@
 import { join } from "node:path"
 import { readBundle } from "../lib/brew.ts"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, runInteractiveCode, type RunOptions } from "../lib/exec.ts"
+import { commandExists, probe, runInteractiveCode, type RunOptions, type RunResult } from "../lib/exec.ts"
 import type { StepOutcome } from "../lib/steps.ts"
 import { warmSudo, type SudoSession } from "../lib/sudo.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
@@ -15,12 +15,14 @@ import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 export type PackageRuntime = {
   commandExists: (bin: string) => Promise<boolean>
   runInteractiveCode: (command: string[], opts?: RunOptions) => Promise<number>
+  probe: (command: string[]) => Promise<RunResult>
   warmSudo: (reason: string) => Promise<SudoSession>
 }
 
 const defaultRuntime: PackageRuntime = {
   commandExists,
   runInteractiveCode,
+  probe,
   warmSudo: (reason) => warmSudo(reason),
 }
 
@@ -39,6 +41,16 @@ const bundleCommand = (action: "check" | "install", bundlePath: string): string[
   ...(action === "check" ? ["--verbose"] : []),
   `--file=${bundlePath}`,
 ]
+
+const casksNeedingInstall = (bundleCheckOutput: string): string[] => {
+  const casks: string[] = []
+  const pattern = /^→ Cask (.+?) needs to be installed or updated\.$/gm
+  for (const match of bundleCheckOutput.matchAll(pattern)) {
+    const name = match[1]
+    if (name) casks.push(name)
+  }
+  return casks
+}
 
 export async function checkPackages(options: PackageOptions = {}): Promise<number> {
   const bundlePath = bundlePathFor(options)
@@ -94,17 +106,25 @@ export async function installPackages(options: PackageOptions = {}): Promise<Ste
     return { ok: true, detail: `${entries.length} package entries already satisfied` }
   }
 
-  // Ask once, before the pour, rather than letting the tenth cask in ask forty
-  // minutes from now — see lib/sudo.ts. Formula-only bundles skip this entirely.
-  const casks = entries.filter((entry) => entry.kind === "cask").length
+  // Bundle's verbose result is the plan, unlike counting every cask declared in
+  // the Brewfile. One outdated formula must not claim that all 47 casks are
+  // about to be installed or ask for an unrelated administrator password.
+  const detail = await runtime.probe(bundleCommand("check", bundlePath))
+  const casks = casksNeedingInstall(`${detail.stdout}\n${detail.stderr}`)
   const sudo =
-    casks > 0
+    casks.length > 0
       ? await runtime.warmSudo(
-          `Homebrew is about to install ${casks} cask(s); some need administrator rights.`,
+          `Homebrew is about to install or update ${casks.length} cask(s): ${casks.join(
+            ", ",
+          )}. Some need administrator rights.`,
         )
       : null
 
-  printInfo("Running brew bundle install on the terminal (casks may ask for your password)")
+  printInfo(
+    casks.length > 0
+      ? "Running brew bundle install on the terminal (pending casks may ask for your password)"
+      : "Running brew bundle install on the terminal",
+  )
   try {
     const install = await runtime.runInteractiveCode(bundleCommand("install", bundlePath), {
       needsStdin: true,

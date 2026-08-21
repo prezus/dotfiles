@@ -57,6 +57,24 @@ export const setLogSink = (next: LogSink | null): void => {
 /** Whether output is being captured for a UI rather than written to stdout. */
 export const getLogSink = (): LogSink | null => sink
 
+/** A mounted terminal pane that accepts a child's unmodified PTY stream. */
+export type TerminalSink = {
+  /** Feed bytes emitted by the child into the pane's terminal emulator. */
+  write(bytes: Uint8Array): void
+  /** Route terminal query responses back to the currently running PTY. */
+  connectPty(writer: ((bytes: Uint8Array) => void) | undefined): void
+}
+
+let terminalSink: TerminalSink | null = null
+
+/** Install or remove the terminal pane used by interactive subprocesses. */
+export const setTerminalSink = (next: TerminalSink | null): void => {
+  terminalSink = next
+}
+
+/** Return the mounted terminal pane, if the TUI is showing one. */
+export const getTerminalSink = (): TerminalSink | null => terminalSink
+
 /**
  * Structured step progress for a status bar; latest event wins.
  *

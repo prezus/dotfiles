@@ -12,6 +12,7 @@
 // Keeping the data layer renderer-free is what lets a breaking OpenTUI bump
 // touch one directory instead of the whole command.
 import { Result } from "better-result"
+import { Schema } from "effect"
 import { readdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
@@ -35,6 +36,7 @@ import {
   readlinkSafe,
 } from "../../lib/fs.ts"
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
+import { VendorManifestJson } from "../../lib/vendor-manifest.ts"
 
 export type Status = "ok" | "warn" | "fail" | "info"
 
@@ -318,9 +320,10 @@ const fishCompletionsCheck: Check = {
   label: "fish completions",
   run: async () => {
     const dir = join(HOME, ".config", "fish", "completions")
-    const ours: string[] = []
-    const shadowed: string[] = []
-    const missing: string[] = []
+    type CompletionTool = (typeof FISH_TOOL_COMPLETIONS)[number]
+    const ours: CompletionTool[] = []
+    const shadowed: CompletionTool[] = []
+    const missing: CompletionTool[] = []
 
     await Promise.all(
       FISH_TOOL_COMPLETIONS.map(async (tool) => {
@@ -340,8 +343,8 @@ const fishCompletionsCheck: Check = {
       }),
     )
     // Preserve the declared order rather than completion-race order.
-    const order = (a: string, b: string) =>
-      FISH_TOOL_COMPLETIONS.indexOf(a as never) - FISH_TOOL_COMPLETIONS.indexOf(b as never)
+    const order = (a: CompletionTool, b: CompletionTool) =>
+      FISH_TOOL_COMPLETIONS.indexOf(a) - FISH_TOOL_COMPLETIONS.indexOf(b)
     ours.sort(order)
     shadowed.sort(order)
     missing.sort(order)
@@ -369,7 +372,7 @@ const fishCompletionsCheck: Check = {
           return current.trimEnd() === fresh.stdout.trimEnd() ? null : tool
         }),
       )
-    ).filter((t): t is string => t !== null)
+    ).filter((tool) => tool !== null)
     stale.sort(order)
 
     if (stale.length > 0) {
@@ -441,10 +444,6 @@ const piSkillsCheck: Check = {
   },
 }
 
-type VendorManifest = {
-  vendors: { source: string; pinnedCommit: string; vendoredOn: string }[]
-}
-
 /** Replaces a `node -e "require(...)"` shell-out with a native JSON read. */
 const vendoredCheck: Check = {
   id: "skills-vendored",
@@ -454,15 +453,17 @@ const vendoredCheck: Check = {
     const manifest = Bun.file(join(SKILLS_REPO, "vendor-manifest.json"))
     if (!(await manifest.exists())) return { status: "info", message: "" }
 
-    const parsed = await Result.tryPromise(async () => (await manifest.json()) as VendorManifest)
-    return Result.match<VendorManifest, unknown, CheckResult>(parsed, {
-      ok: (data) => ({
+    const parsed = await Result.tryPromise(async () =>
+      Schema.decodeUnknownSync(VendorManifestJson)(await manifest.text()),
+    )
+    return Result.match(parsed, {
+      ok: (data): CheckResult => ({
         status: "info",
         message: `vendored: ${data.vendors
           .map((v) => `${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
           .join(" · ")}`,
       }),
-      err: () => ({
+      err: (): CheckResult => ({
         status: "warn",
         message: "vendored — vendor-manifest.json unreadable",
       }),

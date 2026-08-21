@@ -125,10 +125,11 @@ export function reduceHomeKey(
 
   // First-letter jump: `d` for doctor, `u` for update, and so on. Ambiguous
   // letters cycle through the matches rather than always landing on the first.
-  if (key.name && key.name.length === 1 && /[a-z]/.test(key.name)) {
+  const keyName = key.name
+  if (keyName && keyName.length === 1 && /[a-z]/.test(keyName)) {
     const matches = commands
       .map((c, i) => ({ c, i }))
-      .filter(({ c }) => c.startsWith(key.name as string))
+      .filter(({ c }) => c.startsWith(keyName))
     if (matches.length > 0) {
       const next = matches.find(({ i }) => i > cursor) ?? matches[0]
       if (next) return { state: { cursor: next.i }, intent: { kind: "none" } }
@@ -235,14 +236,16 @@ const cycle = (
   step: number,
 ): ReconcileState => {
   const item = items[cursor]
-  if (!item || item.choices.length === 0) return { ...state, cursor }
-  const current = state.choice.get(item.id) ?? item.choices[0]
-  const at = item.choices.indexOf(current as string)
+  const first = item?.choices[0]
+  if (!item || first === undefined) return { ...state, cursor }
+  const current = state.choice.get(item.id) ?? first
+  const at = item.choices.indexOf(current)
   // Modulo twice: JS `%` keeps the sign, so a left-cycle off index 0 would
   // otherwise land on a negative index and read as undefined.
   const next = item.choices[(((at + step) % item.choices.length) + item.choices.length) % item.choices.length]
+  if (next === undefined) return { ...state, cursor }
   const choice = new Map(state.choice)
-  choice.set(item.id, next as string)
+  choice.set(item.id, next)
   return { cursor, choice }
 }
 

@@ -5,20 +5,18 @@
 //   - install never silently deletes: a real dir is backed up to .bak.<ts>
 //   - update NEVER auto-commits; it stops for human review of the diff
 import { Result } from "better-result"
+import { Schema } from "effect"
 import { join } from "node:path"
 import { HOME, SKILLS_REPO, SKILLS_SRC } from "../lib/env.ts"
 import { runInteractiveCode } from "../lib/exec.ts"
 import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
 import { printError, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
+import { VendorManifestJson } from "../lib/vendor-manifest.ts"
 
 const AGENTS_LINK = join(HOME, ".agents", "skills")
 const CLAUDE_LINK = join(HOME, ".claude", "skills")
 const PI_LINK = join(HOME, ".pi", "agent", "skills")
 const PI_DIR = join(HOME, ".pi", "agent")
-
-type VendorManifest = {
-  vendors: { source: string; pinnedCommit: string; vendoredOn: string }[]
-}
 
 /** Report what a link did, keeping the "never silently delete" promise visible. */
 async function reportLink(linkPath: string, target: string): Promise<void> {
@@ -107,7 +105,9 @@ async function status(): Promise<number> {
   // Native JSON read — this was a `node -e "require(...)"` shell-out in bash.
   const manifest = Bun.file(join(SKILLS_REPO, "vendor-manifest.json"))
   if (await manifest.exists()) {
-    const parsed = await Result.tryPromise(async () => (await manifest.json()) as VendorManifest)
+    const parsed = await Result.tryPromise(async () =>
+      Schema.decodeUnknownSync(VendorManifestJson)(await manifest.text()),
+    )
     Result.match(parsed, {
       ok: (data) => {
         for (const v of data.vendors) {

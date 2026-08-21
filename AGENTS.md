@@ -156,10 +156,13 @@ sequences when piped.
 - **`src/tui/` is the only OpenTUI-aware code**, plus `commands/doctor/view.tsx`. OpenTUI is
   pre-1.0 and pinned exactly; `checks.ts` and the rest of the data layer import none of it,
   so a breaking bump touches one directory.
-- **Tests:** `bun run test` (166 of them) and `bun run typecheck`. Run them yourself —
-  there is deliberately no CI; this is a single-user repo. Prefer pure
-  functions over mocks — the SSH block splice, the stow planner, the Brewfile parser and the
-  step runner are all tested without touching the machine.
+- **Tests:** Run `bun run test` and `bun run typecheck` yourself; this single-user repo has
+  no CI. Do not add tests by default. Add one for a reproduced regression, a destructive
+  operation, an external contract, or a non-obvious invariant that types cannot express.
+  Prefer one integration path over exhaustive unit examples. Do not test trivial formatting,
+  mirror every implementation branch, or pin internal arrays and constants. A test written
+  alongside an implementation does not prove that the chosen behavior matches the request.
+  Prefer real temp files and processes over mocks when a test is justified.
 - **Keyboard behaviour is a pure reducer** (`src/tui/interaction.ts`), not logic buried in a
   component. Components render state and perform intents; they decide nothing. This is what
   makes the interactive paths testable without a terminal — everything except drawing and
@@ -167,21 +170,22 @@ sequences when piped.
 
 - **Nothing renders an unbounded list.** Every screen used to draw all its rows —
   `rows.map`, doctor's 26 checks, a fixed 24-line output tail — so on a short terminal the
-  row you needed to act on simply was not on screen. `src/tui/scroll.ts` owns the
-  arithmetic (pure, tested): `windowFor` for cursor-driven lists, `tailWindow` for the
-  output pane's follow-from-the-bottom scrollback, and `fitWindow` for doctor, whose rows
+  row you needed to act on simply was not on screen. `src/tui/scroll.ts` owns list
+  arithmetic: `windowFor` for cursor-driven lists and `fitWindow` for doctor, whose rows
   are **not** all one row tall because a failing check draws its `extra` detail lines too.
-  Adding a screen with a list means using one of these, not `map`.
-- **Resize is a subscription, not a read.** `paneRows()`/`truncate()` always read
-  `process.stdout`, but nothing told React the answer had changed, so layout froze at
-  whatever size it had when the last keypress landed. `useTerminalSize()`
-  (`src/tui/use-terminal-size.ts`) is the single listener; screens read it instead of
-  `process.stdout`. `exec.ts` keeps its own copy of that subscription — it resizes the
-  child's PTY live, and `lib/` must not import the UI layer.
-- **Child output streams into the UI by default.** `runInteractive` checks for a log sink:
-  if one is installed (the TUI is showing a pane) it pipes the child and streams its lines
-  in, rather than inheriting the terminal. brew, stow, rustup toolchains and bun all render
-  inside the app.
+  The output pane uses libghostty's viewport and scrollback instead.
+- **Resize is a subscription, not a read.** `useTerminalSize()`
+  (`src/tui/use-terminal-size.ts`) drives screen layout and resizes the embedded libghostty
+  grid. `exec.ts` separately resizes the child's PTY to the same dimensions; `lib/` reaches
+  the pane through `TerminalSink` and does not import the UI layer.
+- **Child output is a VT stream, not log lines.** `runInteractive` gives captured tools a
+  PTY and sends its unmodified bytes through `TerminalSink`. `src/tui/terminal-session.ts`
+  owns the pinned `libghostty-vt` adapter and projects its cell grid into OpenTUI. Keep ANSI,
+  cursor movement, Unicode width and scrollback there. `exec.ts` must not parse terminal
+  escapes, and the React pane must not reconstruct terminal state from strings.
+- **OpenTUI selection copies through OSC52.** `home.tsx` keeps terminal rows selectable and
+  copies each completed drag immediately; `clipboard.ts` also handles forwarded copy keys.
+  Ghostty's native selection is unavailable while OpenTUI owns mouse reporting.
 - **Mark a child `needsStdin: true` when it needs the USER's keyboard** — sudo, chsh,
   $EDITOR, the `curl | bash` installers. exec.ts then suspends any mounted UI around **that
   child alone** and gives the terminal straight back. Commands never call `withSuspendedUI`
@@ -231,9 +235,11 @@ sequences when piped.
   "Password:" somewhere nobody could see or answer, and the install hung until sudo timed
   out. It surfaced as a bare "Homebrew failed". The install pass therefore sets
   `needsStdin` (`src/commands/packages.ts`); the read-only `check` pass does not, since it
-  never escalates. `src/lib/sudo.ts` warms the ticket first so the one prompt arrives up
-  front with a reason, and keeps it alive — macOS expires it after five minutes, which is
-  far shorter than a fresh bundle install. Losing the pane for that pass is the trade.
+  never escalates. When Bundle's verbose check names pending casks, `src/lib/sudo.ts`
+  warms the ticket first and keeps it alive — macOS expires it after five minutes, which
+  is far shorter than a fresh bundle install. Counting every declared cask here is wrong:
+  one outdated formula must not trigger a password prompt for all casks in the Brewfile.
+  Losing the pane for the install pass is the trade.
 - **Package drift has two directions**, and they're checked in two different places:
   - *bundle → not installed*: `dotfiles check-packages` (a thin `brew bundle check`). It
     walks the Brewfile and never enumerates the system, so it sees only this direction.

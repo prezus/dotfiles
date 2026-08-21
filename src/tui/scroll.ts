@@ -1,8 +1,7 @@
 // Windowing a list that is taller than the terminal.
 //
-// Every screen in this app rendered its rows unconditionally: the pickers with
-// `rows.map`, doctor with 26 checks, the output pane with a fixed 24-row tail.
-// On a 24-row terminal that means rows you have to act on are simply not on
+// Every list screen in this app once rendered its rows unconditionally. On a
+// 24-row terminal that means rows you have to act on are simply not on
 // screen, with nothing to tell you they exist — the reconcile picker will
 // happily hide the package you were trying to remove.
 //
@@ -46,36 +45,12 @@ export function windowFor(prev: number, total: number, focus: number, viewport: 
   return { start, end: Math.min(total, start + windowSize(total, viewport)) }
 }
 
-/**
- * The slice to draw for the output pane, which scrolls from the BOTTOM.
- *
- * `offset` is distance from the tail, so 0 means "following", which is the
- * state a running command should stay in. Expressing it this way is what makes
- * the follow behaviour fall out for free: new lines arriving change `total`,
- * and at offset 0 the window slides with it. Scroll up and the offset pins you
- * to the same lines while output keeps arriving above.
- */
-export function tailWindow(total: number, offset: number, viewport: number): Window {
-  const size = windowSize(total, viewport)
-  const clamped = clampOffset(offset, total, viewport)
-  const end = total - clamped
-  return { start: Math.max(0, end - size), end }
-}
-
-/** The furthest you can scroll back before the window would leave the list. */
-export const maxOffset = (total: number, viewport: number): number =>
-  Math.max(0, total - windowSize(total, viewport))
-
-/** Keep an offset inside the scrollable range as the list grows and shrinks. */
-export const clampOffset = (offset: number, total: number, viewport: number): number =>
-  Math.max(0, Math.min(Math.floor(offset), maxOffset(total, viewport)))
-
 /** Rows a window is not showing, on each side of it. */
 export type Hidden = { above: number; below: number }
 
 /**
  * The "12 more ↓" style counts for a window, so a screen never hides rows in
- * silence. `dropped` is history already discarded (see MAX_HISTORY) and counts
+ * silence. `dropped` is history already discarded and counts
  * as hidden above — a pane that quietly forgets output reads as one that never
  * received it.
  */
