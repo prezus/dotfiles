@@ -12,18 +12,23 @@ repo `.gitignore`):
 |------|----------|-----|
 | `agent/settings.json` | yes | provider/model/theme config |
 | `agent/themes/*.json` | yes | custom themes (e.g. `catppuccin-macchiato`) |
+| `agent/extensions/zed.ts` | yes | `/zed` command for opening the current project in Zed |
+| `agent/extensions/subagent/config.json` | yes | spawn, concurrency, recursion, and scheduling limits |
 | `agent/skills` | no — **symlink** | → `~/.agents/skills` (the [skills repo](https://github.com/prezus/skills) canonical pool) |
 | `agent/auth.json` | no — **local** | OAuth/API secrets — never commit |
 | `agent/sessions/` | no — **local** | per-machine runtime state |
 | `agent/npm/` | no — **local** | npm packages pi installs (`pi install npm:…`) |
 | `agent/git/` | no — **local** | git packages pi clones (`pi install git:…`) |
 
-`auth.json` and `sessions/` stay as real files in `~/.pi/agent`; only `settings.json`
-and `themes/` are symlinked from here, so `~/.pi/agent` remains a real directory.
+`auth.json` and `sessions/` stay as real files in `~/.pi/agent`; tracked settings,
+themes, and extension config are symlinked from here, so `~/.pi/agent` remains a real
+directory.
 
 ## Extensions
 
-`agent/settings.json` is the manifest. Every npm source has an exact version. Bun installs
+Run `/zed` from any Pi session to open `ctx.cwd` in Zed through macOS `open`.
+
+`agent/settings.json` is the package manifest. Every npm source has an exact version. Bun installs
 those sources into the ignored `~/.pi/agent/npm/` runtime directory; `dotfiles pi install`
 rebuilds that directory on a new machine.
 
@@ -42,6 +47,15 @@ dotfiles pi verify
 Pi packages execute with the user's full permissions. Review the exact published release
 and its runtime dependencies before adding a pin. Registry signatures establish which
 bytes the registry served; they do not establish that those bytes are trustworthy.
+
+### Subagents
+
+`pi-subagents` is capped at eight child launches per parent session, four per run, and two
+active asynchronous runs. Nesting stops at one child level, parallel execution is limited
+to two at once, schedules are disabled, and any spawn-budget grant requires confirmation.
+Scout and researcher use Luna; reviewer uses Terra; worker uses Sol at medium thinking;
+oracle uses Sol at high thinking. `pi-web-access` supplies the researcher's explicit web
+tools.
 
 ## Skills — consumed, not owned
 

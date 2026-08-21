@@ -89,12 +89,19 @@ home/.config/fish/conf.d/git.fish
 !home/.config/fish/functions/theme_gruvbox.fish
 
 # ─── Pi agent config ────────────────────────────────────────────────
+#     Web access cache and credentials are machine-local runtime state.
+home/.pi/web-search-cache/
+home/.pi/web-search.json
 #     Ignore all of agent/ by default (auth.json holds secrets, sessions/ is
 #     runtime state), then un-ignore only what we author: settings, themes,
-#     skills. auth.json + sessions/ stay LOCAL — never symlinked or committed.
+#     and extension config. auth.json + sessions/ stay LOCAL and uncommitted.
 home/.pi/agent/*
 !home/.pi/agent/settings.json
 !home/.pi/agent/themes/
+!home/.pi/agent/extensions/
+!home/.pi/agent/extensions/zed.ts
+!home/.pi/agent/extensions/subagent/
+!home/.pi/agent/extensions/subagent/config.json
 # NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
 # the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
 

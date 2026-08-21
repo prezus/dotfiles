@@ -1,0 +1,21 @@
+{
+  "toolDescriptionMode": "compact",
+  "maxSubagentSpawnsPerSession": 8,
+  "maxSubagentSpawnsPerRun": 4,
+  "maxActiveAsyncRunsPerSession": 2,
+  "maxSubagentDepth": 1,
+  "parallel": {
+    "maxTasks": 4,
+    "concurrency": 2
+  },
+  "timeoutMs": 1200000,
+  "toolTimeoutMs": 300000,
+  "scheduledRuns": {
+    "enabled": false
+  },
+  "authorityPolicy": {
+    "spawnBudgetGrant": "confirm",
+    "scheduleCreate": "forbid"
+  },
+  "artifactDir": "session"
+}
