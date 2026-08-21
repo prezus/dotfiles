@@ -15,6 +15,7 @@ blue = "#8aadf4"
 default_shell = "fish"
 
 [ui]
+copy_on_select = false
 sidebar_width = 32
 right_click_passthrough_modifier = "ctrl"
 prompt_new_workspace_name = true
