@@ -10,7 +10,7 @@
 //
 // One subscription, one piece of state. Every screen that wants to be
 // responsive reads this hook instead of reading `process.stdout` directly.
-import { useEffect, useState } from "react"
+import { useTerminalDimensions } from "@opentui/react"
 
 export type TerminalSize = { columns: number; rows: number }
 
@@ -24,29 +24,24 @@ export const currentSize = (): TerminalSize => ({
   rows: process.stdout.rows ?? 30,
 })
 
-const sameSize = (a: TerminalSize, b: TerminalSize): boolean =>
-  a.columns === b.columns && a.rows === b.rows
-
-/** The live terminal size, re-rendering the caller whenever it changes. */
+/**
+ * The live terminal size, re-rendering the caller whenever it changes.
+ *
+ * Delegates to OpenTUI rather than subscribing to `process.stdout` resize
+ * events itself. The two agree in a real terminal, so this was invisible in
+ * use — but the renderer is the thing that actually lays the frame out, and a
+ * view that budgets rows against a DIFFERENT number than the renderer uses is
+ * only accidentally correct. It also made the layout untestable: under
+ * `testRender(…, { height: 24 })` the old hook reported the height of whatever
+ * terminal `bun test` was attached to, so a panel asked to prove it fits in 24
+ * rows was quietly laid out for 60.
+ */
 export function useTerminalSize(): TerminalSize {
-  const [size, setSize] = useState<TerminalSize>(currentSize)
-
-  useEffect(() => {
-    // Bail out when the size is unchanged. A resize drag fires this many times
-    // a second and most events carry the same dimensions as the last; returning
-    // the previous object keeps React from reconciling the whole tree for a
-    // no-op, which is the same reason the output pane coalesces its batches.
-    const onResize = (): void => {
-      setSize((previous) => {
-        const next = currentSize()
-        return sameSize(previous, next) ? previous : next
-      })
-    }
-    process.stdout.on("resize", onResize)
-    return () => {
-      process.stdout.off("resize", onResize)
-    }
-  }, [])
-
-  return size
+  const { width, height } = useTerminalDimensions()
+  // Guard the pre-first-measure case, where OpenTUI can report 0.
+  const fallback = currentSize()
+  return {
+    columns: width > 0 ? width : fallback.columns,
+    rows: height > 0 ? height : fallback.rows,
+  }
 }
