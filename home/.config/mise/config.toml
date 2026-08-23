@@ -1,11 +1,8 @@
-# mise — the toolchain manifest, tracked because it is the ONE place a node
-# version is recorded. (Vite+'s equivalent lives in ~/.vite-plus/config.json,
-# which is machine-local and deliberately not stowed — see issue #1.)
+# The shared toolchain manifest and the one tracked default Node version.
 #
-# idiomatic_version_file_enable_tools is load-bearing: recent mise IGNORES
-# .node-version unless a tool opts in, and .node-version is exactly what
-# `vp env pin` writes. Without this line every per-project pin silently stops
-# resolving, with no error anywhere.
+# idiomatic_version_file_enable_tools is load-bearing: recent mise ignores
+# .node-version unless a tool opts in. Existing per-project pins would otherwise
+# stop resolving without an error.
 [settings]
 idiomatic_version_file_enable_tools = ["node"]
 

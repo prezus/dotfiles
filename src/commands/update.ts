@@ -4,9 +4,9 @@
 // are one selection, made once, before anything runs.
 import { join } from "node:path"
 import { readBundle } from "../lib/brew.ts"
-import { DOTFILES_DIR, HOME, SKILLS_REPO } from "../lib/env.ts"
-import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
-import { isDirectory, pathExists } from "../lib/fs.ts"
+import { DOTFILES_DIR, SKILLS_REPO } from "../lib/env.ts"
+import { commandExists, probe, runInteractiveCode } from "../lib/exec.ts"
+import { isDirectory } from "../lib/fs.ts"
 import { IS_DARWIN } from "../lib/platform.ts"
 import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
 import { getStepSink, isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
@@ -34,7 +34,7 @@ export const UPDATE_TASKS: UpdateTask[] = [
   {
     id: "extras",
     title: "Language tools",
-    description: "rustup, cargo, go, bun, fisher, Vite+",
+    description: "rustup, cargo, go, bun, fisher",
     default: true,
   },
   { id: "stow", title: "Re-stow", description: "re-symlink home/ → $HOME", default: true },
@@ -52,7 +52,6 @@ export type UpdateRuntime = {
   runInteractiveCode: typeof runInteractiveCode
   probe: typeof probe
   readBundle: typeof readBundle
-  pathExists: typeof pathExists
 }
 
 const defaultUpdateRuntime: UpdateRuntime = {
@@ -60,7 +59,6 @@ const defaultUpdateRuntime: UpdateRuntime = {
   runInteractiveCode,
   probe,
   readBundle,
-  pathExists,
 }
 
 /** Package sources `brew upgrade` does not touch. Attempts all and reports all failures. */
@@ -97,12 +95,6 @@ export async function updateExtras(runtime: UpdateRuntime = defaultUpdateRuntime
       await runOne("fisher", ["fish", "-c", "fisher update"])
       if (!failed.includes("fisher")) printSuccess("fisher plugins updated")
     }
-  }
-
-  const vp = join(env.get("HOME") ?? HOME, ".vite-plus", "bin", "vp")
-  if (await runtime.pathExists(vp)) {
-    printInfo("Vite+ upgrade (vp)...")
-    await runOne("Vite+", [vp, "upgrade"])
   }
 
   return failed.length === 0 ? { ok: true } : { ok: false, detail: `failed: ${failed.join(", ")}` }

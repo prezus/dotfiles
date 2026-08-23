@@ -137,7 +137,7 @@ the file*. **No third module branches on platform to build a path.** Importing
 ```
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
-dotfiles init            Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills
+dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills
 dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins / skills
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
@@ -149,7 +149,6 @@ dotfiles stow            Re-symlink home/ → $HOME. --dry-run previews, --adopt
                          existing machine. Conflicts are named before stow is run.
 dotfiles ssh             Write the 1Password-agent + legacy-compat block into ~/.ssh/config
 dotfiles bun             Install JS globals from packages/bun-global.txt
-dotfiles viteplus        Install Vite+ (vp/vpr) to ~/.vite-plus
 dotfiles plannotator     Install the Plannotator CLI to ~/.local/bin
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
@@ -165,29 +164,23 @@ sequences when piped.
 
 - **Skills in a separate repo**, symlinked — one source of truth, works across all 5 agents (Claude Code/Codex/Cursor/OpenCode/Pi). See `prezus/skills/VENDORING.md`.
 - **brew vs bun split** — brew for anything with a formula (auto-completions); bun only for JS-only tools (`bun-global.txt`). npm globals are eliminated.
-- **Node.js is managed by Vite+** (`VP_NODE_MANAGER=yes`), not Homebrew. `vp env` provides
-  `node/npm/npx/corepack` shims in `~/.vite-plus/bin`. Default is **`latest`** (not Vite+'s
-  own default of latest-LTS) — set by `setDefaultNodeLatest` in `src/commands/viteplus.ts`, because that
-  choice lives in the machine-local `~/.vite-plus/config.json`, which is not stowed.
-  Per-project: `vp env pin <v>` writes a standard `.node-version` (portable to fnm/mise/nvm
-  if we ever migrate); `vp env use <v>` is session-only.
-  - **`brew "node"` is deliberately NOT in `packages/bundle`, but IS installed — and can't
-    be removed.** 12 formulae depend on it (`opencode`, `pi-coding-agent`, `mongosh`,
-    `prettier`, `typescript`, `tailwindcss`, `jupyterlab`, …) and `brew uninstall node`
-    refuses. Vite+'s shims can't satisfy them either: brew's node CLIs hardcode an absolute
-    shebang (`#!/opt/homebrew/opt/node/bin/node`) and never consult PATH. This is fine —
-    the two runtimes are isolated, so bumping Vite+'s Node can't break brew's CLIs. Strip
-    `brew "node"` from any fresh `brew bundle dump`, same as the `vscode "…"` lines.
-  - **PATH order is the whole ballgame.** Both nodes exist and can differ by a major
-    version; whichever lands first in PATH wins. `~/.vite-plus/bin` is pinned ahead of
-    `/opt/homebrew/bin` in `conf.d/paths.fish` — don't reorder it. `dotfiles doctor` prints
-    the resolved `node` path and warns when the shim is outranked.
-  - **Vite+ owns its shell integration** — it writes `conf.d/vite-plus.fish` + blocks in
-    `.zshrc`/`.profile`/`.zshenv`; because those are stowed, its writes land in the repo and
-    are committed (don't hand-edit or strip them).
+- **Node.js is managed by mise on both platforms**, not Homebrew. The tracked default
+  lives in `home/.config/mise/config.toml`; `mise install` runs after stow during init.
+  Per-project `.node-version` files override it because the config explicitly enables
+  `idiomatic_version_file_enable_tools = ["node"]`. Vite+ is not installed globally;
+  projects that use it declare `vite-plus` locally.
+  - **`brew "node"` is deliberately NOT in `packages/bundle`, but IS installed and can't
+    be removed.** Several formulae depend on it (`opencode`, `pi-coding-agent`, `mongosh`,
+    `prettier`, `typescript`, `tailwindcss`, `jupyterlab`, …), and `brew uninstall node`
+    refuses. Those CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`, so mise cannot satisfy
+    their dependency and changing the project Node cannot break them. Strip `brew "node"`
+    from any fresh `brew bundle dump`, same as the `vscode "…"` lines.
+  - **PATH order decides which Node a shell runs.** mise's activation in
+    `conf.d/zy-mise.fish` must remain the final PATH mutation so its shim outranks
+    `/opt/homebrew/bin`. `dotfiles doctor` prints the resolved path and warns when the
+    configured mise version does not own it.
 - **1Password SSH** — no keygen; `dotfiles ssh` binds `IdentityAgent`; git signs via `op-ssh-sign`.
 - **Two shells** — zsh is the current login shell; fish is being adopted (starship prompt shared, so both look identical). See `home/.config/fish/AGENTS.md`.
-- **Vite+ (`vp`/`vpr`)** installed via `dotfiles viteplus`; fish integration in `home/.config/fish/{conf.d/vite-plus.fish,completions/vp*.fish}`.
 
 ## NOTES
 

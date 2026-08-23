@@ -24,7 +24,9 @@ export const HOME_DIR = join(DOTFILES_DIR, "home")
 /** A path lives in exactly one of home/ or the overlay — AGENTS.md PLATFORMS. */
 export const OVERLAY_DIR = join(DOTFILES_DIR, IS_DARWIN ? "home-darwin" : "home-linux")
 
-export const STOW_PACKAGES = ["home", IS_DARWIN ? "home-darwin" : "home-linux"] as const
+// Overlay first is load-bearing for GNU Stow. It must unfold links from the old
+// single-package layout before a restow can merge shared and platform files.
+export const STOW_PACKAGES = [IS_DARWIN ? "home-darwin" : "home-linux", "home"] as const
 
 export const HOME_DIRS = [HOME_DIR, OVERLAY_DIR] as const
 

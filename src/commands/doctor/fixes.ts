@@ -121,12 +121,6 @@ const FIXES = {
     "rust toolchains installed",
   ),
 
-  viteplus: runsCommand(
-    "install Vite+",
-    async () => (await import("../viteplus.ts")).viteplus(),
-    "Vite+ installed",
-  ),
-
   // `agent-pi`, not `pi` — agentChecks derives its ids from the binary name.
   // A fix keyed to a non-existent check is silently dead: fixFor returns
   // undefined, the row shows no [fix ⏎], and nothing says why.

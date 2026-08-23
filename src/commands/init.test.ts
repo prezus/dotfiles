@@ -17,8 +17,8 @@ describe("init contract", () => {
   })
 
   it("preserves the ordering shared by both platforms", () => {
-    expect(indexOf("stow")).toBeGreaterThan(indexOf("viteplus"))
-    expect(indexOf("pi")).toBeGreaterThan(indexOf("stow"))
+    expect(indexOf("mise")).toBeGreaterThan(indexOf("stow"))
+    expect(indexOf("pi")).toBeGreaterThan(indexOf("mise"))
     expect(indexOf("rust-esp")).toBeGreaterThan(indexOf("rust"))
     // skills only wires symlinks, so it comes after everything that creates them.
     expect(indexOf("skills")).toBeGreaterThan(indexOf("stow"))

@@ -12,7 +12,6 @@ describe("language-tool updates", () => {
       },
       probe: async () => ({ code: 127, stdout: "", stderr: "", ok: false }),
       readBundle: async () => [],
-      pathExists: async () => false,
     }
 
     const outcome = await updateExtras(runtime)

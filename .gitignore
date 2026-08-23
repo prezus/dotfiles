@@ -86,8 +86,6 @@ home*/.config/fish/conf.d/git.fish
 # ...but keep the fish files we author ourselves. Generated tool completions
 # (docker/kubectl/orb/orbctl) stay ignored — `dotfiles fish` regenerates them,
 # `dotfiles doctor` verifies them.
-!home*/.config/fish/completions/vp.fish
-!home*/.config/fish/completions/vpr.fish
 !home*/.config/fish/completions/dotfiles.fish
 !home*/.config/fish/functions/theme_gruvbox.fish
 !home*/.config/fish/functions/open.fish
@@ -105,6 +103,7 @@ home*/.pi/agent/*
 !home*/.pi/agent/settings.json
 !home*/.pi/agent/themes/
 !home*/.pi/agent/extensions/
+home*/.pi/agent/extensions/*
 !home*/.pi/agent/extensions/zed.ts
 !home*/.pi/agent/extensions/subagent/
 !home*/.pi/agent/extensions/subagent/config.json

@@ -90,6 +90,42 @@ async function lstatSafe(path: string) {
   }
 }
 
+type SymlinkAncestor = {
+  owned: boolean
+  projected: string
+  current: string
+}
+
+/** Resolve a path through its nearest symlinked parent without touching it. */
+async function symlinkAncestor(
+  path: string,
+  targetDir: string,
+  sourceDirs: readonly string[],
+): Promise<SymlinkAncestor | undefined> {
+  let ancestor = dirname(path)
+  while (ancestor !== targetDir) {
+    const stats = await lstatSafe(ancestor)
+    if (stats?.isSymbolicLink()) {
+      const current = await readlink(ancestor)
+      const resolved = resolve(dirname(ancestor), current)
+      const owned = sourceDirs.some((sourceDir) => {
+        const fromSource = relative(sourceDir, resolved)
+        return fromSource !== ".." && !fromSource.startsWith(`..${sep}`) && !isAbsolute(fromSource)
+      })
+      return {
+        owned,
+        projected: join(resolved, relative(ancestor, path)),
+        current,
+      }
+    }
+
+    const parent = dirname(ancestor)
+    if (parent === ancestor) return undefined
+    ancestor = parent
+  }
+  return undefined
+}
+
 /**
  * Plan for a SINGLE package. The multi-package case with one source dir is
  * exactly this, so it delegates rather than keeping a second copy of the
@@ -180,6 +216,32 @@ export async function planStowAll(
     }
 
     const stats = await lstatSafe(link)
+    const ancestor = await symlinkAncestor(link, targetDir, sourceDirs)
+
+    // lstat follows symlinked parents. Without this branch, a file reached
+    // through a folded package directory looks like a byte-identical real file,
+    // and reclaim() unlinks the source file through the parent symlink.
+    if (ancestor) {
+      if (!ancestor.owned) {
+        actions.push({
+          kind: "conflict",
+          path: rel,
+          link,
+          target,
+          reason: "foreign-link",
+          current: ancestor.current,
+        })
+        return
+      }
+      if (ancestor.projected === src && stats) {
+        actions.push({ kind: "ok", path: rel, link, target })
+        return
+      }
+      if (stats) {
+        actions.push({ kind: "relink", path: rel, link, target, current: ancestor.current })
+        return
+      }
+    }
 
     if (!stats) {
       actions.push({ kind: "create", path: rel, link, target, folds: srcIsDir })

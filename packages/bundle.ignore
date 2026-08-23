@@ -21,6 +21,12 @@ vscode "*"
 # Homebrew's node is a transitive dep of 12 node-based CLIs (opencode,
 # pi-coding-agent, mongosh, prettier, typescript, …) and brew refuses to
 # uninstall it. It gets marked installed-on-request, so every dump lists it.
-# Node for OUR projects is owned by Vite+ (~/.vite-plus/bin shims) — the two are
-# isolated because brew's CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`.
+# Node for our projects is owned by mise. The two runtimes stay isolated because
+# brew's Node-based CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`.
 brew "node"
+
+# Language tools are shared across platforms and declared in their own manifests.
+# Brew Bundle still dumps them after `cargo install` / `go install`, so exclude
+# that duplicate representation from the macOS-only package drift check.
+cargo "*"
+go "*"

@@ -118,6 +118,3 @@ eval "$(starship init zsh)"
 # ESP32 Rust toolchain
 # shellcheck source=/dev/null
 [ -f "$HOME/.config/esp32/env.sh" ] && source "$HOME/.config/esp32/env.sh"
-
-# Vite+ bin (https://viteplus.dev)
-. "$HOME/.vite-plus/env"

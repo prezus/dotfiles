@@ -1,6 +1,8 @@
 // Homebrew as a PackageBackend. The install/check logic still lives in
 // commands/packages.ts because Bundle stays the authority for the Brewfile;
 // this only exposes it through the shared shape.
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PACKAGES_DIR } from "./env.ts"
 import { probe } from "./exec.ts"
@@ -36,15 +38,16 @@ async function declared(): Promise<Set<string>> {
 
 /** Dumps to a TEMP file — never over packages/bundle, which carries hand edits. */
 async function installed(): Promise<Set<string>> {
-  const tmp = join(process.env.TMPDIR ?? "/tmp", `dotfiles-bundle-dump.${process.pid}`)
+  // Doctor runs package checks concurrently. A PID-only filename lets one check
+  // delete the other's dump before it reads it.
+  const dir = await mkdtemp(join(tmpdir(), "dotfiles-bundle-dump-"))
+  const file = join(dir, "Brewfile")
   try {
-    const dump = await probe(["brew", "bundle", "dump", `--file=${tmp}`, "--force"])
+    const dump = await probe(["brew", "bundle", "dump", `--file=${file}`, "--force"])
     if (!dump.ok) return new Set()
-    return normalizeBundle(await Bun.file(tmp).text())
+    return normalizeBundle(await Bun.file(file).text())
   } finally {
-    await Bun.file(tmp)
-      .unlink()
-      .catch(() => {})
+    await rm(dir, { recursive: true, force: true })
   }
 }
 

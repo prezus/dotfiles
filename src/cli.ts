@@ -38,16 +38,16 @@ type Command = {
 const ALL_COMMANDS: Command[] = [
   {
     name: "init",
-    description: "Full setup: packages/rust/bun/vite+/Plannotator/stow/Pi/ssh/fish/skills",
+    description: "Full setup: packages/rust/bun/Plannotator/stow/mise/Pi/ssh/fish/skills",
     help:
-      "Full setup. macOS: brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills\n" +
-      "Linux: pacman/yay → rust → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills → omarchy includes",
+      "Full setup. macOS: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills\n" +
+      "Linux: pacman/yay → rust → bun → Plannotator → stow → mise → Pi → ssh → fish → skills → omarchy includes",
     run: async () => (await import("./commands/init.ts")).init(),
   },
   {
     name: "update",
     description: "Update repos, packages, language tools, stow, Pi plugins, and skills",
-    help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → Pi plugins → skills sync",
+    help: "pull repos → brew + rust/cargo/go/bun/fisher → re-stow → Pi plugins → skills sync",
     run: async (args) => (await import("./commands/update.ts")).update(args),
   },
   {
@@ -103,12 +103,6 @@ const ALL_COMMANDS: Command[] = [
     name: "bun",
     description: "Install JS globals from packages/bun-global.txt",
     run: async () => (await import("./commands/bunglobals.ts")).bunGlobals(),
-  },
-  {
-    name: "viteplus",
-    description: "Install Vite+ (vp/vpr)",
-    help: "Install Vite+ (vp/vpr) to ~/.vite-plus",
-    run: async () => (await import("./commands/viteplus.ts")).viteplus(),
   },
   {
     name: "lang-tools",

@@ -48,7 +48,7 @@ xcode-select --install                 # git + build tools
 # 1. Clone over HTTPS (public) and run the installer
 git clone https://github.com/prezus/dotfiles.git ~/Projects/dotfiles
 cd ~/Projects/dotfiles
-./dotfiles init                        # brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills
+./dotfiles init                        # brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills
 #    (init clones prezus/skills itself, and installs the 1Password CLI/app via brew)
 
 # 2. On an ALREADY-configured machine, first stow needs to adopt existing files:

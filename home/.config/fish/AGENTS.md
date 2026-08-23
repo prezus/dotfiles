@@ -20,11 +20,11 @@ fish/
 │   ├── zoxide.fish         # `zoxide init fish | source`
 │   ├── starship.fish       # prompt (same starship.toml as zsh)
 │   ├── onepassword.fish    # `op completion fish` (plugins.sh is zsh-only)
-│   ├── vite-plus.fish      # Vite+ PATH + `vp` env wrapper
+│   ├── zy-mise.fish        # final PATH mutation; activates tracked toolchains
 │   ├── git.fish            # (fisher/plugin-git — GITIGNORED, not ours)
 │   └── zz-aliases.fish     # aliases; `zz-` prefix so it loads AFTER plugin-git
 ├── functions/              # fisher/plugin-git functions (GITIGNORED, `fisher update`)
-└── completions/            # mostly GITIGNORED; we track only vp.fish, vpr.fish
+└── completions/            # generated tool completions; mostly GITIGNORED
 ```
 
 ## WHERE TO LOOK
@@ -82,8 +82,8 @@ fish/
 - **Brew-installed tools self-complete** — brew drops fish completions into
   `/opt/homebrew/share/fish/vendor_completions.d/ (macOS) or /usr/share/fish/vendor_completions.d/ (Linux)` which fish auto-loads (bun,
   kubectl, orbctl, git, gh, …). Nothing to do.
-- **We only track** `completions/vp.fish` + `vpr.fish` (Vite+, dynamic — they query
-  `vp` at completion time). Everything else in `completions/` is gitignored.
+- Generated tool completions are gitignored. `dotfiles doctor` regenerates and
+  compares them so tool upgrades cannot make stale files invisible.
 
 ## NOTES
 
@@ -106,8 +106,8 @@ conf.d/ is merged from both stow packages, loaded alphabetically:
 **Why `zy-mise.fish` and not `60-mise.fish`:** `fish_add_path` writes the *universal*
 `fish_user_paths`, which fish prepends wholesale on each reconstruction — so any
 `fish_add_path` running after `mise activate` would rank `~/.cargo/bin` ahead of mise's
-node. Digits sort before letters, so a numeric prefix would load it *before*
-`vite-plus.fish`. Same trick as `zz-aliases.fish`.
+node. Digits sort before letters, so a numeric prefix would load before later
+alphabetic tool fragments. Same trick as `zz-aliases.fish`.
 
 **Deliberate divergence from omarchy:** its `env-bootstrap` *appends* `~/.local/bin` after
 the system bins; `fish_user_paths` puts it *before*. That matches macOS, which is the

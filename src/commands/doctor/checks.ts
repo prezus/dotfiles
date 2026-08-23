@@ -42,7 +42,7 @@ import {
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
 import { CONFLICT_REASON, planStowAll } from "../../lib/stow.ts"
 import { readEntries } from "../../lib/skills-layout.ts"
-import { IS_DARWIN, IS_OMARCHY, PLATFORM, type Platform } from "../../lib/platform.ts"
+import { IS_OMARCHY, PLATFORM, type Platform } from "../../lib/platform.ts"
 import { backend } from "../../lib/pkgbackend.ts"
 import { VendorManifestJson } from "../../lib/vendor-manifest.ts"
 
@@ -62,7 +62,7 @@ export type Section = (typeof SECTIONS)[number]
 export type ExtraLine =
   /** Indented, no glyph — e.g. the broken-symlink list. */
   | { kind: "raw"; text: string }
-  /** Its own ⚠ glyph — e.g. the "node is not the Vite+ shim" explanation. */
+  /** Its own ⚠ glyph — e.g. the "node is not the mise shim" explanation. */
   | { kind: "warn"; text: string }
   /** Its own ℹ glyph — e.g. the git signing key. */
   | { kind: "info"; text: string }
@@ -101,17 +101,6 @@ export type CompletedCheck = Check & { result: CheckResult }
 const firstVersion = (text: string): string | undefined => extract(text, /([0-9]+(?:\.[0-9]+)+)/)
 
 const firstLine = (text: string): string => text.split("\n")[0]?.trim() ?? ""
-
-const VITE_PLUS_BIN = join(HOME, ".vite-plus", "bin")
-const VP = join(VITE_PLUS_BIN, "vp")
-const NODE_SHIM = join(VITE_PLUS_BIN, "node")
-
-/** `vp env current` → the bare version. Captured in full: piping vp into an
- *  early-exiting reader SIGPIPEs it into an "Abort trap: 6" (see the original). */
-async function viteplusCurrentNode(): Promise<string | undefined> {
-  const res = await probe([VP, "env", "current"])
-  return extract(res.stdout, /Version\s+(\S+)/)
-}
 
 // ─── Tooling ────────────────────────────────────────────────────────
 
@@ -155,15 +144,11 @@ const gitCheck: Check = {
 }
 
 /**
- * Which tool owns `node`, and is PATH actually resolving to it?
+ * Is PATH resolving `node` to the version and executable owned by mise?
  *
- * Whatever manages Node, the OS package manager keeps its own copy as an
- * unremovable transitive dep of a dozen CLIs. Both exist and can differ by a
- * MAJOR version, so PATH order alone decides which runs.
- *
- * Linux is already on mise. macOS is still on Vite+ until the migration in
- * issue #1 lands — at which point this branch collapses to the mise arm and
- * VITE_PLUS_BIN/viteplusCurrentNode go with it.
+ * The OS package manager keeps its own Node as an unremovable transitive dep of
+ * several CLIs. Both copies can differ by a major version, so PATH order alone
+ * decides which one a shell runs.
  */
 const nodeCheck: Check = {
   id: "node",
@@ -173,32 +158,18 @@ const nodeCheck: Check = {
     const actual = await which("node")
     if (!actual) return { status: "warn", message: "node — missing" }
 
-    const [nodeV, npmV] = await Promise.all([
+    const [nodeV, npmV, miseCurrent] = await Promise.all([
       probe(["node", "--version"]),
       probe(["npm", "--version"]),
+      probe(["mise", "current", "node"]),
     ])
     const message = `node — ${nodeV.stdout.trim()} · npm ${npmV.stdout.trim()} (${actual})`
-
-    if (IS_DARWIN) {
-      if ((await pathExists(NODE_SHIM)) && actual !== NODE_SHIM) {
-        const want = await viteplusCurrentNode()
-        return {
-          status: "warn",
-          message,
-          extra: [
-            { kind: "warn", text: `  ↳ NOT the Vite+ shim — expected v${want ?? "?"} from ${NODE_SHIM}` },
-            { kind: "warn", text: `     ${VITE_PLUS_BIN} is outranked in PATH by ${actual.replace(/\/node$/, "")}` },
-          ],
-        }
-      }
-      return { status: "ok", message }
-    }
-
-    if (!(await commandExists("mise"))) return { status: "ok", message }
-    const want = extract((await probe(["mise", "current", "node"])).stdout, /([0-9][^\s]*)/)
+    const want = extract(miseCurrent.stdout, /([0-9][^\s]*)/)
+    const got = extract(nodeV.stdout, /v?([0-9][^\s]*)/)
     // mise resolves through ~/.local/share/mise/{installs,shims}; either is its.
     const owned = actual.includes("/mise/")
-    if (!owned) {
+
+    if (!miseCurrent.ok || !owned || !want || got !== want) {
       return {
         status: "warn",
         message,
@@ -251,18 +222,6 @@ const goCheck: Check = {
     if (!(await commandExists("go"))) return { status: "warn", message: "go — missing" }
     const version = extract((await probe(["go", "version"])).stdout, /(go[0-9.]+)/)
     return { status: "ok", message: `go — ${version}` }
-  },
-}
-
-const viteplusCheck: Check = {
-  id: "viteplus",
-  section: "Tooling",
-  label: "Vite+",
-  run: async () => {
-    if (!(await pathExists(VP)))
-      return { status: "warn", message: "Vite+ — not installed (dotfiles viteplus)" }
-    const version = firstLine((await probe([VP, "--version"])).stdout)
-    return { status: "ok", message: `Vite+ — ${version}` }
   },
 }
 
@@ -776,11 +735,11 @@ const miseCheck: Check = {
   label: "mise",
   run: async () => {
     if (!(await commandExists("mise")))
-      return { status: IS_DARWIN ? "info" : "warn", message: IS_DARWIN ? "" : "mise — not installed" }
+      return { status: "warn", message: `mise — not installed (${backend.installHint("mise")})` }
     const version = firstVersion((await probe(["mise", "--version"])).stdout)
 
-    // `.node-version` is what `vp env pin` writes, and recent mise ignores those
-    // files unless the tool is opted in. Nothing else would catch this silently
+    // `.node-version` is the existing per-project Node pin, and recent mise
+    // ignores it unless the tool is opted in. Nothing else would catch this silently
     // reverting, and the symptom is per-project pins quietly stopping.
     const setting = await probe(["mise", "settings", "get", "idiomatic_version_file_enable_tools"])
     const honoursNodeVersion = setting.ok && setting.stdout.includes("node")
@@ -1113,7 +1072,6 @@ const ALL_CHECKS: Check[] = [
   bunCheck,
   rustupCheck,
   goCheck,
-  viteplusCheck,
   miseCheck,
   ...agentChecks,
   fishCheck,

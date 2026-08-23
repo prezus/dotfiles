@@ -5,7 +5,7 @@
 //     entries that need a working cargo. arch.txt has none, so linux runs the
 //     package step first — it is also what installs stow.
 //   - ESP AFTER packages on darwin, because espup is one of those cargo entries
-//   - stow AFTER Vite+, because Vite+ writes conf.d/vite-plus.fish into the repo
+//   - mise AFTER stow, because its tracked config must exist before installation
 //   - skills LAST, since it only wires symlinks
 //
 // Every step also depends on earlier steps having amended the shared Env — see
@@ -24,7 +24,7 @@ import { applyRustList, installRustEsp, installRustup } from "./rust.ts"
 import { skills } from "./skills.ts"
 import { ssh } from "./ssh.ts"
 import { stow } from "./stow.ts"
-import { viteplus } from "./viteplus.ts"
+import { runInteractiveCode } from "../lib/exec.ts"
 import { runSteps, type Step } from "../lib/steps.ts"
 import { IS_DARWIN } from "../lib/platform.ts"
 import { getStepSink, printError, printHeader, printSuccess, printWarning } from "../lib/ui.ts"
@@ -47,13 +47,17 @@ export function initSteps(): Step[] {
 function sharedTail(): Step[] {
   return [
     { id: "bun", title: "Bun globals", run: () => fromExitCode(bunGlobals) },
-    { id: "viteplus", title: "Vite+", run: () => fromExitCode(viteplus) },
     { id: "plannotator", title: "Plannotator", run: () => fromExitCode(plannotator) },
     {
       id: "stow",
       title: "Stow dotfiles",
       required: true,
       run: () => fromExitCode(() => stow([])),
+    },
+    {
+      id: "mise",
+      title: "mise toolchains",
+      run: () => fromExitCode(() => runInteractiveCode(["mise", "install"])),
     },
     {
       id: "pi",

@@ -139,7 +139,7 @@ export async function rust(): Promise<number> {
   return listOk && espOk ? 0 : 1
 }
 
-/** `dotfiles viteplus` and friends need this too; exported for init. */
+/** Other setup commands and init need this too. */
 export async function cargoInstalled(): Promise<boolean> {
   return (await commandExists("cargo")) || (await pathExists(join(env.get("HOME") ?? "", ".cargo", "bin", "cargo")))
 }

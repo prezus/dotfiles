@@ -61,10 +61,17 @@ async function reclaim(plan: StowPlan): Promise<number> {
 }
 
 async function applyStow(adopt: boolean): Promise<number> {
-  const args = ["stow", "-R"]
-  if (adopt) args.push("--adopt")
-  args.push("-v", "-d", DOTFILES_DIR, "-t", HOME, ...STOW_PACKAGES)
-  return await runInteractiveCode(args)
+  const flags = ["-v", "-d", DOTFILES_DIR, "-t", HOME]
+  if (adopt) flags.unshift("--adopt")
+
+  // The overlay must first unfold links left by the old home-only layout. A
+  // single `stow -R home home-<platform>` unlinks the shared directory before
+  // Stow inspects the overlay and aborts with "invalid target".
+  const [overlay] = STOW_PACKAGES
+  const prepared = await runInteractiveCode(["stow", "-S", ...flags, overlay])
+  if (prepared !== 0) return prepared
+
+  return await runInteractiveCode(["stow", "-R", ...flags, ...STOW_PACKAGES])
 }
 
 export async function stow(argv: string[] = []): Promise<number> {
