@@ -12,6 +12,7 @@
 import { chmod, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { HOME, OP_AGENT_SOCK } from "../lib/env.ts"
+import { stripManagedBlock as strip } from "../lib/managed-block.ts"
 import { isSocket } from "../lib/fs.ts"
 import { printSuccess, printWarning } from "../lib/ui.ts"
 
@@ -51,23 +52,7 @@ export function buildBlock(socketPath: string): string {
  * testable without touching a real ~/.ssh/config.
  */
 export function stripManagedBlock(config: string): string {
-  const pairs = [{ begin: BEGIN, end: END }, ...LEGACY_MARKERS]
-  const out: string[] = []
-  let closing: string | null = null
-
-  for (const line of config.split("\n")) {
-    if (closing !== null) {
-      if (line === closing) closing = null
-      continue
-    }
-    const opened = pairs.find((p) => p.begin === line)
-    if (opened) {
-      closing = opened.end
-      continue
-    }
-    out.push(line)
-  }
-  return out.join("\n")
+  return strip(config, [{ begin: BEGIN, end: END }, ...LEGACY_MARKERS])
 }
 
 /** Strip then append — the whole update, as one pure function. */

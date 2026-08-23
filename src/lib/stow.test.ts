@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { planStow } from "./stow.ts"
+import { planStow, planStowAll } from "./stow.ts"
 
 let root: string
 let source: string
@@ -118,5 +118,79 @@ describe("planStow", () => {
     await writeFile(join(source, "b"), "b")
     await symlink(join("..", "home", "b"), join(target, "a"))
     expect((await planStow(source, target)).relink.map((action) => action.path)).toEqual(["a"])
+  })
+})
+
+// The invariants that separate planStowAll from "call planStow twice": a shared
+// directory must not fold, and a shared file must surface before stow runs.
+describe("planStowAll", () => {
+  it("does not fold a directory that two packages both supply", async () => {
+    const overlay = join(root, "home-linux")
+    await mkdir(join(source, ".config", "fish"), { recursive: true })
+    await mkdir(join(overlay, ".config", "fish"), { recursive: true })
+    await writeFile(join(source, ".config", "fish", "config.fish"), "shared")
+    await writeFile(join(overlay, ".config", "fish", "linux.fish"), "linux")
+
+    const plan = await planStowAll([source, overlay], target)
+
+    // Folding .config would hide the overlay's file behind a link to home/.
+    expect(plan.create.find((a) => a.path === ".config")).toBeUndefined()
+    expect(plan.conflicts).toEqual([])
+    expect(plan.create.map((a) => a.path).sort()).toEqual([
+      join(".config", "fish", "config.fish"),
+      join(".config", "fish", "linux.fish"),
+    ])
+  })
+
+  it("folds a directory only one package supplies", async () => {
+    const overlay = join(root, "home-linux")
+    await mkdir(join(source, ".config", "nvim"), { recursive: true })
+    await mkdir(join(overlay, ".config"), { recursive: true })
+    await writeFile(join(source, ".config", "nvim", "init.lua"), "x")
+    await writeFile(join(overlay, ".config", "linux-only"), "x")
+
+    const plan = await planStowAll([source, overlay], target)
+
+    // .config cannot fold, but nvim/ (shared tree only) still folds below it.
+    expect(plan.create.map((a) => a.path).sort()).toEqual([
+      join(".config", "linux-only"),
+      join(".config", "nvim"),
+    ])
+    expect(plan.create.find((a) => a.path === join(".config", "nvim"))?.folds).toBe(true)
+  })
+
+  it("reports a file supplied by both packages as an overlay collision", async () => {
+    const overlay = join(root, "home-linux")
+    await mkdir(source, { recursive: true })
+    await mkdir(overlay, { recursive: true })
+    await writeFile(join(source, ".gitconfig"), "shared")
+    await writeFile(join(overlay, ".gitconfig"), "linux")
+
+    const plan = await planStowAll([source, overlay], target)
+
+    expect(plan.conflicts).toEqual([
+      expect.objectContaining({ path: ".gitconfig", reason: "overlay-collision" }),
+    ])
+  })
+
+  it("relinks a file that moved from the shared tree into an overlay", async () => {
+    const overlay = join(root, "home-linux")
+    await mkdir(source, { recursive: true })
+    await mkdir(overlay, { recursive: true })
+    await writeFile(join(overlay, ".zshrc"), "moved")
+    // The live link still points at the old shared location.
+    await symlink(join("..", "home", ".zshrc"), join(target, ".zshrc"))
+
+    const plan = await planStowAll([source, overlay], target)
+
+    // Stale-but-ours: `stow -R` fixes it, so not a foreign-link conflict.
+    expect(plan.relink).toEqual([expect.objectContaining({ path: ".zshrc" })])
+    expect(plan.conflicts).toEqual([])
+  })
+
+  it("skips an overlay directory that does not exist yet", async () => {
+    await writeFile(join(source, ".gitconfig"), "shared")
+    const plan = await planStowAll([source, join(root, "absent")], target)
+    expect(plan.create).toEqual([expect.objectContaining({ path: ".gitconfig" })])
   })
 })

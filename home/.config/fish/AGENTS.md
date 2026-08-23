@@ -13,7 +13,7 @@ fish/
 ├── config.fish             # Minimal: disables greeting only. NO tool inits here.
 ├── fish_plugins            # fisher manifest (jorgebucaran/fisher, jhillyerd/plugin-git)
 ├── conf.d/                 # Auto-sourced, alphabetical order
-│   ├── env.fish            # LANG, EDITOR, MANPATH, JAVA_HOME, ghostty TERM
+│   ├── env.fish            # LANG only — platform VALUES live in the overlays
 │   ├── paths.fish          # PATH via `fish_add_path --move` (brew first, .bun last)
 │   ├── esp32.fish          # Xtensa toolchain PATH + LIBCLANG_PATH (globbed, session-only)
 │   ├── fzf.fish            # FZF_DEFAULT_COMMAND + `fzf --fish | source`
@@ -80,7 +80,7 @@ fish/
 ## COMPLETIONS
 
 - **Brew-installed tools self-complete** — brew drops fish completions into
-  `/opt/homebrew/share/fish/vendor_completions.d/` which fish auto-loads (bun,
+  `/opt/homebrew/share/fish/vendor_completions.d/ (macOS) or /usr/share/fish/vendor_completions.d/ (Linux)` which fish auto-loads (bun,
   kubectl, orbctl, git, gh, …). Nothing to do.
 - **We only track** `completions/vp.fish` + `vpr.fish` (Vite+, dynamic — they query
   `vp` at completion time). Everything else in `completions/` is gitignored.
@@ -90,3 +90,29 @@ fish/
 - `config.fish` also documents that fish provides autosuggestions/highlighting natively.
 - `onepassword.fish` only sets up completions — 1Password's `plugins.sh` (biometric CLI plugins) is POSIX-sh and not fish-sourceable.
 - `env.fish` sets `EDITOR=zed`; `~/.cargo/env` has no fish variant, so `paths.fish` adds `~/.cargo/bin` directly.
+
+## Platform fragments
+
+conf.d/ is merged from both stow packages, loaded alphabetically:
+
+| File | Package | Role |
+|---|---|---|
+| `00-omarchy.fish` | home-linux | port of omarchy's `default/bash/{env-bootstrap,envs}` — EDITOR, BROWSER, MANPAGER |
+| `10-darwin.fish` | home-darwin | EDITOR=zed, JAVA_HOME, ghostty TERM |
+| `env.fish` | home | only what is identical on both |
+| `zy-mise.fish` | home | **must be the last PATH mutation** — see below |
+| `zy-omarchy-aliases.fish` | home-linux | omarchy's portable aliases, minus the ones that collide with `zz-aliases.fish` |
+
+**Why `zy-mise.fish` and not `60-mise.fish`:** `fish_add_path` writes the *universal*
+`fish_user_paths`, which fish prepends wholesale on each reconstruction — so any
+`fish_add_path` running after `mise activate` would rank `~/.cargo/bin` ahead of mise's
+node. Digits sort before letters, so a numeric prefix would load it *before*
+`vite-plus.fish`. Same trick as `zz-aliases.fish`.
+
+**Deliberate divergence from omarchy:** its `env-bootstrap` *appends* `~/.local/bin` after
+the system bins; `fish_user_paths` puts it *before*. That matches macOS, which is the
+consistency worth having.
+
+**Not ported from omarchy's bash:** `inputrc` (readline-only), `shopt`/`HISTCONTROL`
+(fish has its own history), and `default/bash/fns/*` — port those on demand rather than
+wholesale, per the AGENTS.md rule about inheriting code nobody has justified.

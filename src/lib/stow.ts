@@ -14,7 +14,7 @@
 // through directories that already exist rather than folding them.
 import { lstat, readdir, readlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { HOME, HOME_DIR } from "./env.ts"
+import { HOME, HOME_DIR, HOME_DIRS } from "./env.ts"
 
 export type StowAction =
   /** Link already points where it should. */
@@ -44,7 +44,13 @@ export type StowAction =
     }
 
 /** Why a path could not be claimed. Named so CONFLICT_REASON stays exhaustive over it. */
-export type ConflictReason = "real-file" | "real-dir" | "foreign-link" | "absolute-link"
+export type ConflictReason =
+  | "real-file"
+  | "real-dir"
+  | "foreign-link"
+  | "absolute-link"
+  /** Two stow packages supply this file — a repo bug, not a machine one. */
+  | "overlay-collision"
 
 type OfKind<K extends StowAction["kind"]> = Extract<StowAction, { kind: K }>
 
@@ -85,27 +91,97 @@ async function lstatSafe(path: string) {
 }
 
 /**
- * Compute the plan for stowing `sourceDir` into `targetDir`.
- * Defaults to the repo's `home/` → `$HOME`.
+ * Plan for a SINGLE package. The multi-package case with one source dir is
+ * exactly this, so it delegates rather than keeping a second copy of the
+ * fold/reclaim/relink rules in sync.
  */
-export async function planStow(
+export function planStow(
   sourceDir: string = HOME_DIR,
   targetDir: string = HOME,
 ): Promise<StowPlan> {
+  return planStowAll([sourceDir], targetDir)
+}
+
+// `satisfies`, not an annotation: an annotation would erase the literal keys and
+// leave an open dictionary, so a typo'd or missing reason would go unnoticed.
+// This way the object stays exhaustive over ConflictReason AND keeps its keys.
+export const CONFLICT_REASON = {
+  "real-file": "a real file exists here",
+  "real-dir": "a real directory exists where a file belongs",
+  "foreign-link": "a symlink pointing outside the repo",
+  "absolute-link": "an absolute symlink — stow only claims relative ones",
+  "overlay-collision": "supplied by more than one stow package — see AGENTS.md PLATFORMS",
+} satisfies Record<ConflictReason, string>
+
+/**
+ * Plan `stow -R -d $DOTFILES_DIR -t $HOME home home-<platform>`.
+ *
+ * NOT planStow called per package and concatenated: both walks would see an
+ * absent ~/.config/fish and both emit `create … folds: true`, and stow folds a
+ * directory only when ONE package supplies it. Providers must be counted first.
+ */
+export async function planStowAll(
+  sourceDirs: readonly string[] = HOME_DIRS,
+  targetDir: string = HOME,
+): Promise<StowPlan> {
+  // rel path -> the source dirs supplying it, in package order.
+  const providers = new Map<string, string[]>()
+
+  const collect = async (sourceDir: string, rel: string): Promise<void> => {
+    const src = join(sourceDir, rel)
+    const existing = providers.get(rel)
+    if (existing) existing.push(sourceDir)
+    else providers.set(rel, [sourceDir])
+
+    const stats = await lstatSafe(src)
+    if (!stats?.isDirectory()) return
+    for (const child of (await readdir(src)).sort()) await collect(sourceDir, join(rel, child))
+  }
+
+  for (const sourceDir of sourceDirs) {
+    if (!(await lstatSafe(sourceDir))) continue // overlay may not exist yet
+    for (const entry of (await readdir(sourceDir)).sort()) await collect(sourceDir, entry)
+  }
+
   const actions: StowAction[] = []
+  const visited = new Set<string>()
 
   const visit = async (rel: string): Promise<void> => {
+    if (visited.has(rel)) return
+    visited.add(rel)
+
+    const owners = providers.get(rel) ?? []
+    const sourceDir = owners[0]
+    if (sourceDir === undefined) return
+
     const src = join(sourceDir, rel)
     const link = join(targetDir, rel)
-    // Stow writes relative links, resolved from the link's own directory.
     const target = relative(dirname(link), src)
-
-    const stats = await lstatSafe(link)
     const srcStats = await lstatSafe(src)
     const srcIsDir = srcStats?.isDirectory() ?? false
 
+    const children = async (): Promise<void> => {
+      const names = new Set<string>()
+      for (const owner of owners) {
+        const dir = join(owner, rel)
+        if ((await lstatSafe(dir))?.isDirectory()) {
+          for (const child of await readdir(dir)) names.add(child)
+        }
+      }
+      for (const child of [...names].sort()) await visit(join(rel, child))
+    }
+
+    // Same file from two packages is unresolvable; same directory just means it
+    // cannot fold.
+    if (owners.length > 1) {
+      if (srcIsDir) return await children()
+      actions.push({ kind: "conflict", path: rel, link, target, reason: "overlay-collision" })
+      return
+    }
+
+    const stats = await lstatSafe(link)
+
     if (!stats) {
-      // Nothing there — stow folds the whole directory into one link.
       actions.push({ kind: "create", path: rel, link, target, folds: srcIsDir })
       return
     }
@@ -114,14 +190,7 @@ export async function planStow(
       const current = await readlink(link)
       const resolved = resolve(dirname(link), current)
 
-      // Stow only claims ownership of RELATIVE links into the package. An
-      // absolute link is "not owned by stow" even when it points at exactly the
-      // right file, and stow reports it as a conflict. Verified against
-      // `stow -n`: ~/.zshenv -> /Users/arkan/Projects/dotfiles/home/.zshenv is
-      // the correct target yet still conflicts.
       if (isAbsolute(current)) {
-        // Even pointing at the right file, an absolute link is not stow's. If
-        // the bytes match ours it is reclaimable rather than a real conflict.
         const kind = (await sameContent(link, src)) ? "reclaim" : "conflict"
         actions.push(
           kind === "reclaim"
@@ -133,31 +202,23 @@ export async function planStow(
 
       if (resolved === src) {
         actions.push({ kind: "ok", path: rel, link, target })
-      } else {
-        const fromSource = relative(sourceDir, resolved)
-        const insideSource =
-          fromSource !== ".." && !fromSource.startsWith(`..${sep}`) && !isAbsolute(fromSource)
-        if (insideSource) {
-          // Ours, but stale — points elsewhere inside the package.
-          actions.push({ kind: "relink", path: rel, link, target, current })
-        } else if (await sameContent(link, src)) {
-          actions.push({ kind: "reclaim", path: rel, link, target, current })
-        } else {
-          actions.push({ kind: "conflict", path: rel, link, target, reason: "foreign-link", current })
-        }
+        return
       }
+
+      // Ours = inside ANY package, so a file moved home/ -> home-darwin/ reads as
+      // stale rather than foreign.
+      const insideAny = sourceDirs.some((dir) => {
+        const fromSource = relative(dir, resolved)
+        return fromSource !== ".." && !fromSource.startsWith(`..${sep}`) && !isAbsolute(fromSource)
+      })
+      if (insideAny) actions.push({ kind: "relink", path: rel, link, target, current })
+      else if (await sameContent(link, src)) actions.push({ kind: "reclaim", path: rel, link, target, current })
+      else actions.push({ kind: "conflict", path: rel, link, target, reason: "foreign-link", current })
       return
     }
 
-    if (stats.isDirectory() && srcIsDir) {
-      // Target dir already exists, so stow unfolds: descend and link leaves.
-      const children = await readdir(src)
-      for (const child of children.sort()) await visit(join(rel, child))
-      return
-    }
+    if (stats.isDirectory() && srcIsDir) return await children()
 
-    // A real FILE whose bytes already match ours is reclaimable; a directory
-    // never is, because removing it could take unrelated content with it.
     if (!stats.isDirectory() && (await sameContent(link, src))) {
       actions.push({ kind: "reclaim", path: rel, link, target })
       return
@@ -172,7 +233,7 @@ export async function planStow(
     })
   }
 
-  for (const entry of (await readdir(sourceDir)).sort()) await visit(entry)
+  for (const rel of [...providers.keys()].filter((r) => !r.includes(sep)).sort()) await visit(rel)
 
   return {
     actions,
@@ -183,13 +244,3 @@ export async function planStow(
     conflicts: actions.filter((a): a is OfKind<"conflict"> => a.kind === "conflict"),
   }
 }
-
-// `satisfies`, not an annotation: an annotation would erase the literal keys and
-// leave an open dictionary, so a typo'd or missing reason would go unnoticed.
-// This way the object stays exhaustive over ConflictReason AND keeps its keys.
-export const CONFLICT_REASON = {
-  "real-file": "a real file exists here",
-  "real-dir": "a real directory exists where a file belongs",
-  "foreign-link": "a symlink pointing outside the repo",
-  "absolute-link": "an absolute symlink — stow only claims relative ones",
-} satisfies Record<ConflictReason, string>

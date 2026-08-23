@@ -4,9 +4,11 @@
 	signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGCX7suRRVY3p4nzbkQPY4SYsBUcX5tkjpEvYomlNl6B
 [gpg]
 	format = ssh
-[gpg "ssh"]
-	program = /Applications/1Password.app/Contents/MacOS/op-ssh-sign
 [commit]
 	gpgsign = true
 [core]
-	excludesfile = /Users/arkan/.config/git/ignore
+	excludesfile = ~/.config/git/ignore
+# op-ssh-sign's path is the only per-OS line here; git ignores a missing include,
+# so this is safe before the overlay is stowed.
+[include]
+	path = ~/.config/git/platform

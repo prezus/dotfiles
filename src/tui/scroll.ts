@@ -106,3 +106,17 @@ export function fitWindow(
   }
   return { start, end }
 }
+
+/**
+ * Terminal rows a block of text occupies once the terminal wraps it.
+ *
+ * `prefix` is the width of anything drawn before it on the same line (markers,
+ * status glyphs, a trailing hint). Counting a long line as one row under-budgets
+ * a list, which then draws past its box and over whatever is below it — the
+ * doctor panel overflowed by 7 rows at 80 columns this way, because one check's
+ * message ran to 235 columns and was budgeted as a single row.
+ */
+export function wrappedRows(text: string, columns: number, prefix = 0): number {
+  const width = Math.max(1, Math.floor(columns))
+  return Math.max(1, Math.ceil((prefix + text.length) / width))
+}

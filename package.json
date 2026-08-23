@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "macOS dev environment CLI — brew, stow, fish, skills",
+  "description": "macOS + Omarchy/Arch dev environment CLI — packages, stow, fish, skills",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",

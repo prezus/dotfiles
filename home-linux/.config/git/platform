@@ -1,0 +1,3 @@
+# Linux: the deb/rpm/AUR 1Password packages install to /opt/1Password.
+[gpg "ssh"]
+	program = /opt/1Password/op-ssh-sign

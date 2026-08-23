@@ -22,15 +22,27 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # tracks. The curl installer is the bare-machine fallback; once brew exists a
 # later `init` supersedes it (conf.d/paths.fish already ranks ~/.bun/bin below
 # /opt/homebrew/bin, so there is no ambiguity about which one wins).
+# Look for a previously bootstrapped bun BEFORE deciding to install one. The
+# curl installer writes ~/.bun/bin and appends to an interactive rc, so a
+# non-interactive shell (this one, and anything the CLI spawns) does not have it
+# on PATH — without this check every invocation re-downloaded bun.
+if ! command -v bun >/dev/null 2>&1 && [ -x "$HOME/.bun/bin/bun" ]; then
+    PATH="$HOME/.bun/bin:$PATH"
+    export PATH
+fi
+
 if ! command -v bun >/dev/null 2>&1; then
-    if command -v brew >/dev/null 2>&1; then
+    # Only macOS converges on Homebrew's bun; on Arch the CLI's package step runs
+    # long after this, so the curl installer is the only option here.
+    if [ "$(uname -s)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
         echo "bun not found — installing via Homebrew..." >&2
         brew install oven-sh/bun/bun
     else
-        echo "bun not found and no Homebrew yet — bootstrapping bun directly..." >&2
+        echo "bun not found — bootstrapping bun directly..." >&2
         curl -fsSL https://bun.sh/install | bash
-        export PATH="$HOME/.bun/bin:$PATH"
     fi
+    PATH="$HOME/.bun/bin:$PATH"
+    export PATH
 fi
 
 # ─── Egg #2: dependencies ───────────────────────────────────────────

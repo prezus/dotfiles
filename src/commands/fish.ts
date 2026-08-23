@@ -7,12 +7,27 @@ import { userInfo } from "node:os"
 import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR } from "../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../lib/exec.ts"
+import { IS_DARWIN } from "../lib/platform.ts"
 import { confirm, printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 /** The shell out of `dscl . -read /Users/<u> UserShell`. Exported to be tested. */
 export function parseLoginShell(dsclOutput: string): string | null {
   const m = /^UserShell:\s*(\S+)\s*$/m.exec(dsclOutput)
   return m?.[1] ?? null
+}
+
+/**
+ * 7th field of a passwd line. Exported to be tested: a wrong index silently
+ * yields the home directory instead of the shell.
+ */
+export function parsePasswdShell(getentOutput: string): string | null {
+  const line = getentOutput.split("\n").find((l) => l.trim() !== "")
+  if (line === undefined) return null
+  const fields = line.split(":")
+  // A passwd line has exactly 7 fields; anything shorter is not one.
+  if (fields.length < 7) return null
+  const shell = fields[6]?.trim()
+  return shell ? shell : null
 }
 
 /**
@@ -25,10 +40,16 @@ export function parseLoginShell(dsclOutput: string): string | null {
  * changed, on every run, and never once said "already fish" on the machine
  * where it had just succeeded.
  */
-async function loginShell(): Promise<string | null> {
-  const res = await probe(["/usr/bin/dscl", ".", "-read", `/Users/${userInfo().username}`, "UserShell"])
-  // Fall back to the old, weaker signal rather than re-running chsh blindly.
-  return res.ok ? parseLoginShell(res.stdout) : (process.env.SHELL ?? null)
+export async function systemLoginShell(): Promise<string | null> {
+  // macOS keeps this in Directory Services, not /etc/passwd; dscl does not exist
+  // on Linux. getent reads NSS, so it also covers LDAP users.
+  const user = userInfo().username
+  const res = IS_DARWIN
+    ? await probe(["/usr/bin/dscl", ".", "-read", `/Users/${user}`, "UserShell"])
+    : await probe(["getent", "passwd", user])
+  if (!res.ok) return process.env.SHELL ?? null
+  const parsed = IS_DARWIN ? parseLoginShell(res.stdout) : parsePasswdShell(res.stdout)
+  return parsed ?? (process.env.SHELL ?? null)
 }
 
 /** Add fish to /etc/shells so chsh will accept it. Needs sudo. */
@@ -72,7 +93,7 @@ export async function fish(): Promise<number> {
 
   await registerShell(fishPath)
 
-  const current = await loginShell()
+  const current = await systemLoginShell()
   if (current !== fishPath) {
     // Changing the login shell is not something to do on an unattended run just
     // because nobody was there to say no. bash's `read` would have taken EOF as

@@ -45,18 +45,18 @@ id_ed25519
 # ─── Machine-local overrides (per-host, not shared) ─────────────────
 *.local
 **/*.local.*
-home/.config/**/local.*
+home*/.config/**/local.*
 *.private
 # ...but the XDG ~/.local dir is NOT a machine-local override — keep it tracked
-!home/.local/
-!home/.local/**
+!home*/.local/
+!home*/.local/**
 
 # ─── Package/tooling artifacts ──────────────────────────────────────
 node_modules/
 .npm/
 *.log
 # Installer-managed binary (currently >100 MB; GitHub rejects files over 100 MB)
-home/.local/bin/plannotator
+home*/.local/bin/plannotator
 
 # ─── Editors / IDEs ─────────────────────────────────────────────────
 .idea/
@@ -77,31 +77,37 @@ Thumbs.db
 # ─── Fisher-managed fish plugin files ───────────────────────────────
 #     Derived from home/.config/fish/fish_plugins; restored with `fisher update`.
 #     We track our OWN config.fish + conf.d/*.fish + fish_plugins, not these.
-home/.config/fish/functions/*
-home/.config/fish/completions/*
-home/.config/fish/conf.d/git.fish
+#
+#     `home*/` throughout this file: rules must cover the shared tree AND the
+#     platform overlays, or a file stops being ignored the moment it moves.
+home*/.config/fish/functions/*
+home*/.config/fish/completions/*
+home*/.config/fish/conf.d/git.fish
 # ...but keep the fish files we author ourselves. Generated tool completions
 # (docker/kubectl/orb/orbctl) stay ignored — `dotfiles fish` regenerates them,
 # `dotfiles doctor` verifies them.
-!home/.config/fish/completions/vp.fish
-!home/.config/fish/completions/vpr.fish
-!home/.config/fish/completions/dotfiles.fish
-!home/.config/fish/functions/theme_gruvbox.fish
+!home*/.config/fish/completions/vp.fish
+!home*/.config/fish/completions/vpr.fish
+!home*/.config/fish/completions/dotfiles.fish
+!home*/.config/fish/functions/theme_gruvbox.fish
+!home*/.config/fish/functions/open.fish
+# fish's universal variable store — holds this machine's resolved fish_user_paths.
+home*/.config/fish/fish_variables
 
 # ─── Pi agent config ────────────────────────────────────────────────
 #     Web access cache and credentials are machine-local runtime state.
-home/.pi/web-search-cache/
-home/.pi/web-search.json
+home*/.pi/web-search-cache/
+home*/.pi/web-search.json
 #     Ignore all of agent/ by default (auth.json holds secrets, sessions/ is
 #     runtime state), then un-ignore only what we author: settings, themes,
 #     and extension config. auth.json + sessions/ stay LOCAL and uncommitted.
-home/.pi/agent/*
-!home/.pi/agent/settings.json
-!home/.pi/agent/themes/
-!home/.pi/agent/extensions/
-!home/.pi/agent/extensions/zed.ts
-!home/.pi/agent/extensions/subagent/
-!home/.pi/agent/extensions/subagent/config.json
+home*/.pi/agent/*
+!home*/.pi/agent/settings.json
+!home*/.pi/agent/themes/
+!home*/.pi/agent/extensions/
+!home*/.pi/agent/extensions/zed.ts
+!home*/.pi/agent/extensions/subagent/
+!home*/.pi/agent/extensions/subagent/config.json
 # NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
 # the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
 
@@ -110,11 +116,11 @@ home/.pi/agent/*
 #     package, not a link per file), so Zed writes its runtime state straight
 #     into the repo — prompts/ is an LMDB database + lock file, not config.
 #     Same shape as the Pi block above: deny by default, un-ignore what we author.
-home/.config/zed/*
-!home/.config/zed/settings.json
-!home/.config/zed/keymap.json
-!home/.config/zed/AGENTS.md
-!home/.config/zed/themes/
+home*/.config/zed/*
+!home*/.config/zed/settings.json
+!home*/.config/zed/keymap.json
+!home*/.config/zed/AGENTS.md
+!home*/.config/zed/themes/
 
 # ─── Stow / install runtime ─────────────────────────────────────────
 # Backups the install script makes before replacing a real dir/symlink.

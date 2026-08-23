@@ -18,12 +18,14 @@
 // are ours to check. There is no `home/.claude/` — Claude Code is simply the one
 // agent that will not read the vendor-neutral ~/.agents/skills, so it gets a
 // single shim symlink and nothing else. Its runtime state is its own business.
-import { HOME, HOME_DIR, OWNED_LINKS } from "./env.ts"
+import { HOME, HOME_DIRS, OWNED_LINKS } from "./env.ts"
 import { findBrokenSymlinks, mirroredDirectories, pathExists, readlinkSafe } from "./fs.ts"
 
-/** Every $HOME directory the stow tree mirrors. */
+/** Across BOTH packages: the shared tree does not mirror ~/.config/hypr, so
+ *  omitting the overlay would leave it unscanned. */
 export async function ownedDirectories(): Promise<string[]> {
-  return await mirroredDirectories(HOME_DIR, HOME)
+  const perPackage = await Promise.all(HOME_DIRS.map((dir) => mirroredDirectories(dir, HOME)))
+  return [...new Set(perPackage.flat())]
 }
 
 /**

@@ -1,7 +1,8 @@
 # DOTFILES
 
-macOS dev environment via GNU Stow + a `dotfiles` CLI. Shell: zsh (current) → fish
-(adopting). Packages via Homebrew + bun. Skills live in a **separate repo**
+macOS **and** Omarchy/Arch Linux dev environment via GNU Stow + a `dotfiles` CLI.
+Shell: fish on both (zsh is macOS-only legacy). Packages via Homebrew on macOS,
+pacman/yay on Linux. Skills live in a **separate repo**
 ([prezus/skills](https://github.com/prezus/skills)) and are symlinked in.
 
 > **Agents:** this file is the map. Each substantial app under `home/.config/`
@@ -18,20 +19,27 @@ dotfiles/
 │   ├── commands/             #   one module per subcommand; doctor/ has checks|fixes|view|plain
 │   ├── lib/                  #   env, exec (subprocess + PATH threading), fs, brew, stow, steps
 │   └── tui/                  #   the ONLY OpenTUI-aware code (renderer, theme, pickers)
-├── home/                     # Stowed to $HOME  (stow -t ~ home)
-│   ├── .zshrc .zprofile .profile .gitconfig   # shell + git (top-level)
+├── home/                     # SHARED stow package — correct on both platforms
+│   ├── .gitconfig            #   (+ an optional include of the platform overlay)
 │   └── .config/
 │       ├── fish/             # Fish shell (AGENTS.md) — conf.d/ + fisher plugins
 │       ├── zed/              # Editor (AGENTS.md) — LSP/formatter/theme
-│       ├── aerospace/        # Tiling WM (AGENTS.md) — aerospace.toml
 │       ├── nvim/             # Neovim: init.lua + lazy-lock.json (lazy.nvim)
-│       ├── starship/         # prompt (shared by zsh + fish)
-│       ├── git/ ghostty/ ripgrep/ opencode/ gh/
+│       ├── starship/         # prompt
+│       ├── mise/ git/ ripgrep/ opencode/ gh/
+├── home-darwin/              # macOS-only overlay
+│   ├── .zshrc .zprofile .zshenv .profile
+│   └── .config/{aerospace,ghostty,git,fish}/
+├── home-linux/               # Linux-only overlay
+│   └── .config/{hypr,omarchy,ghostty,git,fish}/
 ├── packages/
-│   ├── bundle                # Brewfile (brew/cask/tap/go/cargo) — primary package source
+│   ├── bundle                # Brewfile (brew/cask/tap/go/cargo) — macOS
 │   ├── bundle.ignore         # installed-but-intentionally-untracked (drift-check excludes)
+│   ├── arch.txt aur.txt      # pacman / yay manifests — Linux
+│   ├── arch.ignore           # same role as bundle.ignore, for pacman
 │   ├── rust.txt              # rustup toolchains/components/targets (`dotfiles rust`)
-│   └── bun-global.txt        # JS-only global CLIs with no brew formula
+│   ├── cargo.txt go.txt      # crates + go tools, BOTH platforms (`dotfiles lang-tools`)
+│   └── bun-global.txt        # JS-only global CLIs with no native package
 ├── AGENTS.md README.md INSTALL.md   # this file + human docs + dotfiles spec
 └── .gitignore
 ```
@@ -40,8 +48,10 @@ dotfiles/
 
 | Task | Location / Command |
 |------|--------------------|
-| Add a CLI tool (has brew formula) | add `brew "x"` / `cask "x"` to `packages/bundle` |
-| Add a JS global with **no** brew formula | add to `packages/bun-global.txt` (installed by `dotfiles bun`) |
+| Add a CLI tool (macOS) | add `brew "x"` / `cask "x"` to `packages/bundle` |
+| Add a CLI tool (Linux) | add the bare name to `packages/arch.txt` (or `aur.txt`) |
+| Add a JS global with **no** native package | add to `packages/bun-global.txt` (installed by `dotfiles bun`) |
+| Add a cargo crate or go tool | `packages/cargo.txt` / `packages/go.txt` — cross-platform, NOT the Brewfile |
 | Silence a package in the drift check | add a glob to `packages/bundle.ignore` — only for things that must NEVER be tracked |
 | VS Code extension | **never here** — it's VS Code Settings Sync (sign in) |
 | Shell alias / abbr (fish) | `home/.config/fish/conf.d/zz-aliases.fish` |
@@ -53,7 +63,9 @@ dotfiles/
 | Git identity / signing | `home/.gitconfig` |
 | SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
-| Tiling WM | `home/.config/aerospace/aerospace.toml` |
+| Tiling WM (macOS) | `home-darwin/.config/aerospace/aerospace.toml` |
+| Tiling WM (Linux) | `home-linux/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
+| Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Wire a new machine | `dotfiles init` |
@@ -62,9 +74,13 @@ dotfiles/
 
 - **Stow owns `~`.** Files under `home/` mirror `$HOME`; stow creates the symlinks.
   Add a file under `home/`, then `dotfiles stow`.
-- **Packages: brew first.** Anything with a Homebrew formula goes in
-  `packages/bundle`; only JS-only tools without a formula go in `bun-global.txt`.
-  Brew tools get fish completions for free (vendor completions dir).
+- **A path lives in exactly ONE stow package.** `home/` iff its whole content is
+  correct on both platforms; otherwise both overlays. The planner reports an
+  `overlay-collision` conflict if you get this wrong, before stow runs.
+- **Packages: the platform's native manager first.** macOS → `packages/bundle`
+  (Homebrew); Linux → `packages/arch.txt` / `aur.txt` (pacman/yay). Only JS-only
+  tools without a native package go in `bun-global.txt`. Both platforms get fish
+  completions from their package manager's vendor completions dir.
 - **Skills are not stored here.** They live in `prezus/skills` and are symlinked
   (`~/.agents/skills` + `~/.claude/skills`) by `dotfiles skills install`.
 - **SSH + secrets are generated/local, not committed.** `dotfiles ssh` writes a
@@ -72,9 +88,40 @@ dotfiles/
 - **Idempotency:** every `dotfiles` step is safe to re-run.
 - **No hardcoded paths** in scripts — use `$DOTFILES_DIR`, `$HOME`, `$SKILLS_REPO`.
 
+## PLATFORMS
+
+`src/lib/platform.ts` answers *which machine*; `src/lib/env.ts` answers *where is
+the file*. **No third module branches on platform to build a path.** Importing
+`IS_DARWIN` to pick a command to spawn is fine; importing it to join a path is not.
+
+- **Own the override, not the default.** A file enters the repo only if Omarchy
+  ships it as an empty user-override stub (`hypr/*.lua`, `omarchy/shell.json`) or
+  does not ship it at all. Files Omarchy ships as working defaults *with an
+  include mechanism* (`ghostty/config`, `foot/foot.ini`) stay unowned — `dotfiles
+  omarchy-includes` appends one managed include line instead.
+- **`omarchy refresh config <path>` overwrites the file with the package
+  default**, and `cp -f` follows a stow symlink, so it writes THROUGH the link
+  into the repo. The symlink survives; the change shows up in `git diff` and
+  `git checkout --` undoes it. That is why the policy is detection, not
+  prevention — making tracked files read-only would be worse, since `cp -f`
+  unlinks and recreates on a permission failure.
+- **Never delete another provider's skills.** Omarchy plants real directories of
+  symlinks in `~/.agents/skills`, `~/.claude/skills` and `~/.pi/agent/skills`.
+  `dotfiles skills install` detects that and MERGES (per-skill links alongside
+  theirs) rather than replacing. It never removes an entry it did not create.
+- **`fish_add_path` silently skips a directory that does not exist**, so the
+  `/opt/homebrew/*` lines in the shared `paths.fish` are inert on Linux. Don't
+  add a `uname` test for them. `fish_user_paths` is UNIVERSAL, though, so a stale
+  entry outlives the file that added it — bump `__dotfiles_paths_generation`.
+
 ## ANTI-PATTERNS
 
 - Editing `~/.config/*` or `~/.zshrc` directly — changes are lost / diverge from the repo until stowed.
+- Running `omarchy refresh config <tracked path>` — it reverts the repo copy. To
+  adopt a new upstream default, diff `/usr/share/omarchy/config/<path>` by hand.
+- Putting a `theme =` line in `home-linux/.config/ghostty/personal.conf` — it is
+  included after omarchy's theme include and would override it, making
+  `omarchy theme set` appear to do nothing.
 - **NEVER commit a `vscode "…"` line to `packages/bundle`** — extensions come from VS Code
   Settings Sync, always, no exceptions. `brew bundle dump` emits one line per installed
   extension (currently ~25 on this machine), so **every** dump must be stripped before

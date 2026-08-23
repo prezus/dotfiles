@@ -18,10 +18,10 @@
 // here and is left behind. `brew autoremove` is the right tool for that and is
 // suggested rather than run — it is a separate decision with its own blast
 // radius.
-import { join } from "node:path"
-import { normalizeBundle, globToRegExp } from "./doctor/checks.ts"
-import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, probe, runInteractiveCode } from "../lib/exec.ts"
+import { basename } from "node:path"
+import { ignorePatterns } from "./doctor/checks.ts"
+import { backend } from "../lib/pkgbackend.ts"
+import { runInteractiveCode } from "../lib/exec.ts"
 import type { ReconcileRow } from "../tui/reconcile-picker.tsx"
 import {
   confirm,
@@ -33,20 +33,14 @@ import {
   printWarning,
 } from "../lib/ui.ts"
 
-/** `brew "broot"` -> { kind: "brew", name: "broot" } */
-function splitDirective(line: string): { kind: string; name: string } | null {
-  const m = /^(brew|cask|tap|go|cargo)\s+"([^"]+)"/.exec(line)
-  return m?.[1] && m[2] ? { kind: m[1], name: m[2] } : null
-}
-
 /** Both directions of drift, as picker rows. Ordered safest-choice-first. */
 export function buildRows(
-  dumped: string,
-  tracked: string,
+  dumpedSet: Set<string>,
+  trackedSet: Set<string>,
   ignorePatterns: RegExp[],
 ): ReconcileRow[] {
-  const installed = normalizeBundle(dumped)
-  const declared = normalizeBundle(tracked)
+  const installed = dumpedSet
+  const declared = trackedSet
 
   const undeclared = [...installed]
     .filter((l) => !declared.has(l))
@@ -71,34 +65,12 @@ export function buildRows(
   ]
 }
 
-async function readIgnorePatterns(): Promise<RegExp[]> {
-  const file = Bun.file(join(PACKAGES_DIR, "bundle.ignore"))
-  if (!(await file.exists())) return []
-  return (await file.text())
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l !== "" && !l.startsWith("#"))
-    .map(globToRegExp)
-}
-
 /** Append directives to a manifest file, keeping a trailing newline. */
 async function appendLines(path: string, lines: string[]): Promise<void> {
   if (lines.length === 0) return
   const existing = (await Bun.file(path).exists()) ? await Bun.file(path).text() : ""
   const suffix = existing === "" || existing.endsWith("\n") ? "" : "\n"
   await Bun.write(path, `${existing}${suffix}${lines.join("\n")}\n`)
-}
-
-/** Delete directives from packages/bundle by exact normalized match. */
-async function removeLines(path: string, lines: string[]): Promise<void> {
-  if (lines.length === 0) return
-  const drop = new Set(lines)
-  const kept = (await Bun.file(path).text())
-    .split("\n")
-    // Compare on the same normalization the sets were built with, so an entry
-    // carrying `, trusted: true` still matches the bare directive it came from.
-    .filter((raw) => !drop.has(raw.trim().replace(/,.*$/, "")))
-  await Bun.write(path, kept.join("\n"))
 }
 
 /**
@@ -112,35 +84,20 @@ async function removeLines(path: string, lines: string[]): Promise<void> {
  * Returns null when the drift could not be computed at all.
  */
 export async function collectReconcileRows(): Promise<ReconcileRow[] | null> {
-  if (!(await commandExists("brew"))) {
-    printError("Homebrew not installed")
+  const declared = await backend.declared()
+  if (declared.size === 0) {
+    printError(`No ${backend.manifests.map((m) => `packages/${basename(m)}`).join(" or ")}`)
     return null
   }
-  const bundlePath = join(PACKAGES_DIR, "bundle")
-  if (!(await Bun.file(bundlePath).exists())) {
-    printError("No packages/bundle")
+  const installed = await backend.installed()
+  if (installed.size === 0) {
+    printError(`could not read ${backend.label} state`)
     return null
   }
-
-  // Dump to a TEMP file — never over packages/bundle, which carries hand edits
-  // and comments that a dump would flatten. Same rule as doctor's drift check.
-  const tmp = join(process.env.TMPDIR ?? "/tmp", `dotfiles-reconcile.${process.pid}`)
-  try {
-    const dump = await probe(["brew", "bundle", "dump", `--file=${tmp}`, "--force"])
-    if (!dump.ok) {
-      printError("could not dump brew state")
-      return null
-    }
-    return buildRows(
-      await Bun.file(tmp).text(),
-      await Bun.file(bundlePath).text(),
-      await readIgnorePatterns(),
-    )
-  } finally {
-    await Bun.file(tmp)
-      .unlink()
-      .catch(() => {})
-  }
+  // The OS baseline is not drift — see PackageBackend.baseline.
+  const base = await backend.baseline()
+  const ours = new Set([...installed].filter((line) => !base.has(line)))
+  return buildRows(ours, declared, await ignorePatterns(backend.ignoreFile))
 }
 
 export async function reconcile(): Promise<number> {
@@ -179,7 +136,6 @@ export async function applyReconcile(
   rows: ReconcileRow[],
   choice: ReadonlyMap<string, string>,
 ): Promise<number> {
-  const bundlePath = join(PACKAGES_DIR, "bundle")
   const pick = (want: string): string[] =>
     rows.filter((r) => choice.get(r.id) === want).map((r) => r.id)
 
@@ -192,24 +148,21 @@ export async function applyReconcile(
   // ── Manifest edits first. These are safe and reviewable in git diff, so they
   // land before the confirm gate rather than behind it — if you abort the
   // uninstalls, the declarations you made are still recorded.
-  await appendLines(bundlePath, keep)
-  await removeLines(bundlePath, undeclare)
-  await appendLines(join(PACKAGES_DIR, "bundle.ignore"), ignore)
-  if (keep.length > 0) printSuccess(`declared ${keep.length} in packages/bundle`)
-  if (undeclare.length > 0) printSuccess(`undeclared ${undeclare.length} from packages/bundle`)
-  if (ignore.length > 0) printSuccess(`added ${ignore.length} to packages/bundle.ignore`)
+  const manifestLabel = backend.manifests.map((m) => `packages/${basename(m)}`).join("/")
+  await backend.declare(keep)
+  await backend.undeclare(undeclare)
+  await appendLines(backend.ignoreFile, ignore)
+  if (keep.length > 0) printSuccess(`declared ${keep.length} in ${manifestLabel}`)
+  if (undeclare.length > 0) printSuccess(`undeclared ${undeclare.length} from ${manifestLabel}`)
+  if (ignore.length > 0) printSuccess(`added ${ignore.length} to packages/${basename(backend.ignoreFile)}`)
 
   if (install.length > 0) {
     printInfo(`installing ${install.length}...`)
     for (const line of install) {
-      const d = splitDirective(line)
-      if (!d) continue
-      const cmd =
-        d.kind === "tap"
-          ? ["brew", "tap", d.name]
-          : ["brew", "install", ...(d.kind === "cask" ? ["--cask"] : []), d.name]
+      const cmd = backend.installCommand(line)
+      if (!cmd) continue
       if ((await runInteractiveCode(cmd, { needsStdin: true })) !== 0)
-        printWarning(`failed to install ${d.name}`)
+        printWarning(`failed to install ${line}`)
     }
   }
 
@@ -228,14 +181,10 @@ export async function applyReconcile(
 
   let failed = 0
   for (const line of remove) {
-    const d = splitDirective(line)
-    if (!d) continue
-    const cmd =
-      d.kind === "tap"
-        ? ["brew", "untap", d.name]
-        : ["brew", "uninstall", ...(d.kind === "cask" ? ["--cask"] : []), d.name]
+    const cmd = backend.uninstallCommand(line)
+    if (!cmd) continue
     if ((await runInteractiveCode(cmd, { needsStdin: true })) !== 0) {
-      printWarning(`failed to uninstall ${d.name}`)
+      printWarning(`failed to uninstall ${line}`)
       failed++
     }
   }
@@ -245,6 +194,10 @@ export async function applyReconcile(
     return 1
   }
   printSuccess(`uninstalled ${remove.length}`)
-  printInfo("Dependencies orphaned by these removals: brew autoremove")
+  printInfo(
+    backend.id === "brew"
+      ? "Dependencies orphaned by these removals: brew autoremove"
+      : "Dependencies orphaned by these removals: pacman -Qdtq | sudo pacman -Rns -",
+  )
   return 0
 }

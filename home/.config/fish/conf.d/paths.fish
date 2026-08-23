@@ -1,8 +1,18 @@
-# PATH — ported from .zshrc.
-# fish_add_path writes to the universal fish_user_paths and won't REORDER an
-# existing entry unless --move is given. We use --move so priority is
-# deterministic every load: Vite+ shims first, then Homebrew, language/tool bins
-# last (so brew prettier/tsc win over bun's dependency copies in ~/.bun/bin).
+# PATH, shared by both platforms.
+#
+# fish_add_path writes the UNIVERSAL fish_user_paths, so entries outlive the file
+# that added them: removing a line here does not remove the path from a machine
+# that already ran the old version. Bump __dotfiles_paths_generation to force a
+# rebuild everywhere.
+#
+# The /opt/homebrew entries are safe to keep shared — fish_add_path silently
+# skips a directory that does not exist, so they are inert on Linux (verified on
+# fish 4.8.1). Don't add a uname test for them.
+set -l generation 2
+if test "$__dotfiles_paths_generation" != "$generation"
+    set -U fish_user_paths
+    set -U __dotfiles_paths_generation $generation
+end
 
 # Low priority — move to the end (append)
 fish_add_path --move --append $HOME/.local/bin

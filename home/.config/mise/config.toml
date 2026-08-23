@@ -1,0 +1,18 @@
+# mise — the toolchain manifest, tracked because it is the ONE place a node
+# version is recorded. (Vite+'s equivalent lives in ~/.vite-plus/config.json,
+# which is machine-local and deliberately not stowed — see issue #1.)
+#
+# idiomatic_version_file_enable_tools is load-bearing: recent mise IGNORES
+# .node-version unless a tool opts in, and .node-version is exactly what
+# `vp env pin` writes. Without this line every per-project pin silently stops
+# resolving, with no error anywhere.
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+claude = "latest"
+codex = "latest"
+gh = "latest"
+node = "26.7.0"
+opencode = "latest"
+pi = "latest"

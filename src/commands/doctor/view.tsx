@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { BOLD, STATUS_COLOR, STATUS_GLYPH, theme } from "../../tui/theme.ts"
 import { initialDoctorNav, reduceDoctorKey } from "../../tui/interaction.ts"
 import { clearRenderer, setRenderer } from "../../tui/renderer.ts"
-import { fitWindow, hiddenCounts } from "../../tui/scroll.ts"
+import { fitWindow, hiddenCounts, wrappedRows } from "../../tui/scroll.ts"
 import { useTerminalSize } from "../../tui/use-terminal-size.ts"
 import {
   CHECKS,
@@ -42,12 +42,38 @@ export async function runDoctorTui(): Promise<number> {
   })
 }
 
+/** `   ` marker + `✓ ` glyph. */
+const ROW_PREFIX = 5
+/** `  [fix ⏎]`, drawn after the message on an actionable row. */
+const FIX_HINT = 9
+/** Indent on an `extra` detail line. */
+const EXTRA_PREFIX = 5
+
 /**
- * How many rows a check draws: its own line, plus one per `extra` detail line.
- * Windowing on item COUNT would be wrong here — a panel of failing checks with
- * detail is several times taller than the same panel when everything is green.
+ * How many TERMINAL rows a check draws.
+ *
+ * Not one per line of text: a message wider than the window wraps, and counting
+ * it as 1 under-budgets the list so it draws past its box and over whatever is
+ * below. Measured at 80 columns this repo's own checks overflowed by 7 rows —
+ * `skills-vendored` alone is 235 columns, three lines budgeted as one.
+ *
+ * Windowing on item COUNT would be wrong for the same reason at a coarser
+ * grain: a panel of failing checks with detail is several times taller than the
+ * same panel when everything is green.
  */
-const rowHeight = (row: Row): number => (isPending(row) ? 1 : 1 + (row.result.extra?.length ?? 0))
+const rowHeight = (row: Row, columns: number, fixable: boolean): number => {
+  const width = Math.max(20, columns)
+  if (isPending(row)) return wrappedRows(row.label, width, ROW_PREFIX)
+
+  const hint = fixable && row.result.status !== "ok" ? FIX_HINT : 0
+  return (
+    wrappedRows(row.result.message, width, ROW_PREFIX + hint) +
+    (row.result.extra ?? []).reduce(
+      (n, e) => n + wrappedRows(e.text.trim(), width, EXTRA_PREFIX),
+      0,
+    )
+  )
+}
 
 export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
   const size = useTerminalSize()
@@ -104,7 +130,7 @@ export function DoctorView({ onExit }: { onExit: (code: number) => void }) {
   const startRef = useRef(0)
   const viewport = Math.max(3, size.rows - 6 - sectionsShown * 2)
   const rowWindow = fitWindow(
-    visible.map(rowHeight),
+    visible.map((r) => rowHeight(r, size.columns - 4, fixFor(r.id) !== undefined)),
     Math.min(cursor, Math.max(0, visible.length - 1)),
     viewport,
     startRef.current,

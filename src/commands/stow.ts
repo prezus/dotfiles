@@ -4,9 +4,10 @@
 // mutation. Previously a conflict produced stow's own wall of text and you went
 // to read the man page; now the conflicting paths are named up front.
 import { unlink } from "node:fs/promises"
-import { DOTFILES_DIR, HOME } from "../lib/env.ts"
+import { DOTFILES_DIR, HOME, STOW_PACKAGES } from "../lib/env.ts"
+import { IS_DARWIN } from "../lib/platform.ts"
 import { commandExists, runInteractiveCode } from "../lib/exec.ts"
-import { CONFLICT_REASON, planStow, type StowPlan } from "../lib/stow.ts"
+import { CONFLICT_REASON, planStowAll, type StowPlan } from "../lib/stow.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 export function summarize(plan: StowPlan): string {
@@ -62,13 +63,15 @@ async function reclaim(plan: StowPlan): Promise<number> {
 async function applyStow(adopt: boolean): Promise<number> {
   const args = ["stow", "-R"]
   if (adopt) args.push("--adopt")
-  args.push("-v", "-d", DOTFILES_DIR, "-t", HOME, "home")
+  args.push("-v", "-d", DOTFILES_DIR, "-t", HOME, ...STOW_PACKAGES)
   return await runInteractiveCode(args)
 }
 
 export async function stow(argv: string[] = []): Promise<number> {
   if (!(await commandExists("stow"))) {
-    printError("GNU Stow not installed (brew install stow)")
+    printError(
+      `GNU Stow not installed (${IS_DARWIN ? "brew install stow" : "sudo pacman -S stow"})`,
+    )
     return 1
   }
 
@@ -81,7 +84,7 @@ export async function stow(argv: string[] = []): Promise<number> {
     )
   }
 
-  const plan = await planStow()
+  const plan = await planStowAll()
   renderPlan(plan)
 
   if (dryRun) {
