@@ -14,6 +14,7 @@
 import { Result } from "better-result"
 import { Schema } from "effect"
 import { systemLoginShell } from "../fish.ts"
+import { goBinDir } from "../langtools.ts"
 import { readPiPluginStatuses } from "../pi.ts"
 import { readdir } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
@@ -30,7 +31,7 @@ import {
   SKILLS_REPO,
   SKILLS_SRC,
 } from "../../lib/env.ts"
-import { commandExists, extract, probe, which } from "../../lib/exec.ts"
+import { commandExists, env, extract, probe, which } from "../../lib/exec.ts"
 import {
   countFilesRecursive,
   isDirectory,
@@ -725,6 +726,15 @@ const goToolsCheck: Check = {
       .map((l) => l.trim())
       .filter((l) => l !== "" && !l.startsWith("#"))
     if (modules.length === 0) return { status: "info", message: "" }
+    if (!(await commandExists("go")))
+      return { status: "warn", message: "packages/go.txt — go not available" }
+
+    // $GOBIN is where `go install` writes, but it only reaches PATH via
+    // conf.d/paths.fish, which skips it until it exists — so a shell started
+    // before the first go tool was installed cannot see any of them. Resolve it
+    // directly rather than reporting seven installed binaries as missing.
+    const binDir = await goBinDir()
+    if (binDir !== "") env.prepend("PATH", binDir)
 
     // `go install` leaves no manifest, so presence of the binary is the record.
     const missing: string[] = []

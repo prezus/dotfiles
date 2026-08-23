@@ -7,9 +7,10 @@
 //
 // They belong with rust.txt and bun-global.txt: installed by a language
 // toolchain, not by an OS package manager, and identical on every platform.
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { PACKAGES_DIR } from "../lib/env.ts"
-import { commandExists, probe, runInteractiveCode } from "../lib/exec.ts"
+import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import type { StepOutcome } from "../lib/steps.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
@@ -33,6 +34,37 @@ export const goBinaryName = (module: string): string => {
   const last = module.split("/").at(-1) ?? module
   // Trailing major-version elements (`/v3`) are not the binary name.
   return /^v[0-9]+$/.test(last) ? (module.split("/").at(-2) ?? last) : last
+}
+
+/**
+ * Where `go install` puts binaries: $GOBIN, else $GOPATH/bin. Empty if `go`
+ * cannot be run at all.
+ */
+export async function goBinDir(): Promise<string> {
+  const res = await probe(["go", "env", "GOBIN", "GOPATH"])
+  if (!res.ok) return ""
+  const [gobin = "", gopath = ""] = res.stdout.split("\n").map((l) => l.trim())
+  if (gobin !== "") return gobin
+  return gopath === "" ? "" : join(gopath, "bin")
+}
+
+/**
+ * Put the `go install` bin directory on PATH for the rest of this process, and
+ * make sure it exists on disk.
+ *
+ * conf.d/paths.fish appends ~/go/bin, but fish_add_path silently skips a
+ * directory that does not exist (the same behaviour its /opt/homebrew comment
+ * relies on). On a machine that has never installed a go tool the directory is
+ * absent, so the entry never lands — and then `go install` writes seven binaries
+ * nobody can run. Creating it makes the fish entry stick from the next shell on;
+ * prepending makes this run's commandExists checks see what we just installed,
+ * instead of doctor reporting the tools missing straight after installing them.
+ */
+export async function activateGo(): Promise<void> {
+  const dir = await goBinDir()
+  if (dir === "") return
+  await mkdir(dir, { recursive: true })
+  env.prepend("PATH", dir)
 }
 
 /** Crates already installed, from `cargo install --list`. */
@@ -89,6 +121,7 @@ export async function langTools(): Promise<StepOutcome> {
       printWarning("go not found — skipping go tools")
       failed += modules.length
     } else {
+      await activateGo()
       for (const module of modules) {
         if (await commandExists(goBinaryName(module))) continue
         if ((await runInteractiveCode(["go", "install", `${module}@latest`])) === 0) {
