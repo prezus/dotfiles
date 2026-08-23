@@ -1,0 +1,15 @@
+# The shared toolchain manifest and the one tracked default Node version.
+#
+# idiomatic_version_file_enable_tools is load-bearing: recent mise ignores
+# .node-version unless a tool opts in. Existing per-project pins would otherwise
+# stop resolving without an error.
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tools]
+claude = "latest"
+codex = "latest"
+gh = "latest"
+node = "26.7.0"
+opencode = "latest"
+pi = "latest"

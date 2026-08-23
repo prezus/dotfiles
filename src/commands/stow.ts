@@ -4,9 +4,10 @@
 // mutation. Previously a conflict produced stow's own wall of text and you went
 // to read the man page; now the conflicting paths are named up front.
 import { unlink } from "node:fs/promises"
-import { DOTFILES_DIR, HOME } from "../lib/env.ts"
+import { DOTFILES_DIR, HOME, STOW_PACKAGES } from "../lib/env.ts"
+import { IS_DARWIN } from "../lib/platform.ts"
 import { commandExists, runInteractiveCode } from "../lib/exec.ts"
-import { CONFLICT_REASON, planStow, type StowPlan } from "../lib/stow.ts"
+import { CONFLICT_REASON, planStowAll, type StowPlan } from "../lib/stow.ts"
 import { printError, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 
 export function summarize(plan: StowPlan): string {
@@ -60,15 +61,24 @@ async function reclaim(plan: StowPlan): Promise<number> {
 }
 
 async function applyStow(adopt: boolean): Promise<number> {
-  const args = ["stow", "-R"]
-  if (adopt) args.push("--adopt")
-  args.push("-v", "-d", DOTFILES_DIR, "-t", HOME, "home")
-  return await runInteractiveCode(args)
+  const flags = ["-v", "-d", DOTFILES_DIR, "-t", HOME]
+  if (adopt) flags.unshift("--adopt")
+
+  // The overlay must first unfold links left by the old home-only layout. A
+  // single `stow -R home home-<platform>` unlinks the shared directory before
+  // Stow inspects the overlay and aborts with "invalid target".
+  const [overlay] = STOW_PACKAGES
+  const prepared = await runInteractiveCode(["stow", "-S", ...flags, overlay])
+  if (prepared !== 0) return prepared
+
+  return await runInteractiveCode(["stow", "-R", ...flags, ...STOW_PACKAGES])
 }
 
 export async function stow(argv: string[] = []): Promise<number> {
   if (!(await commandExists("stow"))) {
-    printError("GNU Stow not installed (brew install stow)")
+    printError(
+      `GNU Stow not installed (${IS_DARWIN ? "brew install stow" : "sudo pacman -S stow"})`,
+    )
     return 1
   }
 
@@ -81,7 +91,7 @@ export async function stow(argv: string[] = []): Promise<number> {
     )
   }
 
-  const plan = await planStow()
+  const plan = await planStowAll()
   renderPlan(plan)
 
   if (dryRun) {

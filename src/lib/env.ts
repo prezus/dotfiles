@@ -4,6 +4,7 @@
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { IS_DARWIN } from "./platform.ts"
 
 export const HOME = homedir()
 
@@ -15,9 +16,28 @@ export const DOTFILES_DIR = process.env.DOTFILES_DIR
 
 export const PACKAGES_DIR = join(DOTFILES_DIR, "packages")
 
-/** The stow SOURCE tree (repo), NOT $HOME. `dotfiles fish` writes generated
- *  completions in here and stow links them out — see AGENTS.md ANTI-PATTERNS. */
+/** The SHARED stow source tree (repo), NOT $HOME. `dotfiles fish` writes
+ *  generated completions in here and stow links them out — see AGENTS.md
+ *  ANTI-PATTERNS. Platform-specific files live in OVERLAY_DIR instead. */
 export const HOME_DIR = join(DOTFILES_DIR, "home")
+
+/** A path lives in exactly one of home/ or the overlay — AGENTS.md PLATFORMS. */
+export const OVERLAY_DIR = join(DOTFILES_DIR, IS_DARWIN ? "home-darwin" : "home-linux")
+
+// Overlay first is load-bearing for GNU Stow. It must unfold links from the old
+// single-package layout before a restow can merge shared and platform files.
+export const STOW_PACKAGES = [IS_DARWIN ? "home-darwin" : "home-linux", "home"] as const
+
+export const HOME_DIRS = [HOME_DIR, OVERLAY_DIR] as const
+
+/** Mirrors omarchy's env-bootstrap precedence so `omarchy dev link` still works. */
+export const OMARCHY_PATH = process.env.OMARCHY_PATH ?? "/usr/share/omarchy"
+
+/** Omarchy's own record of what it installs — the baseline our manifest sits on top of. */
+export const OMARCHY_PACKAGE_LISTS = [
+  join(OMARCHY_PATH, "install", "omarchy-base.packages"),
+  join(OMARCHY_PATH, "install", "omarchy-other.packages"),
+] as const
 
 export const LEGACY_SCRIPT = join(DOTFILES_DIR, "legacy", "dotfiles.bash")
 
@@ -30,14 +50,26 @@ export const ESP_ROOT = join(HOME, ".rustup", "toolchains", "esp")
 export const SKILLS_REPO = process.env.SKILLS_REPO ?? join(HOME, "Projects", "skills")
 export const SKILLS_SRC = process.env.SKILLS_SRC ?? join(SKILLS_REPO, "skills")
 
-// Identical on every macOS install — 2BUA8C4S2C is 1Password's team id.
-export const OP_AGENT_SOCK = join(
-  HOME,
-  "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock",
-)
+// 2BUA8C4S2C is 1Password's team id — identical on every macOS install.
+export const OP_AGENT_SOCK = IS_DARWIN
+  ? join(HOME, "Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock")
+  : join(HOME, ".1password", "agent.sock")
 
-/** Tools fish ships no completions for. Each must support `<tool> completion fish`. */
-export const FISH_TOOL_COMPLETIONS = ["docker", "kubectl", "orb", "orbctl"] as const
+/** Set by hand in the git overlay; exported so doctor can verify it exists. */
+export const OP_SSH_SIGN = IS_DARWIN
+  ? "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
+  : "/opt/1Password/op-ssh-sign"
+
+/** Tools fish ships no completions for. Each must support `<tool> completion fish`.
+ *  orb/orbctl are OrbStack, macOS-only. */
+const ALL_FISH_TOOL_COMPLETIONS = ["docker", "kubectl", "orb", "orbctl"] as const
+export type FishTool = (typeof ALL_FISH_TOOL_COMPLETIONS)[number]
+
+// Annotated, not inferred: a ternary over two `as const` tuples infers a union of
+// tuples, and consumers then only see the narrower branch's members.
+export const FISH_TOOL_COMPLETIONS: readonly FishTool[] = IS_DARWIN
+  ? ALL_FISH_TOOL_COMPLETIONS
+  : (["docker", "kubectl"] as const)
 
 // The skills symlink chain. Not stow's — these cross into a separate repo and
 // chain through each other, which stow doesn't model (INSTALL.md → GNU Stow).

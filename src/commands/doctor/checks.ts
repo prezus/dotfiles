@@ -13,30 +13,37 @@
 // touch one directory instead of the whole command.
 import { Result } from "better-result"
 import { Schema } from "effect"
+import { systemLoginShell } from "../fish.ts"
+import { goBinDir } from "../langtools.ts"
 import { readPiPluginStatuses } from "../pi.ts"
 import { readdir } from "node:fs/promises"
-import { join, resolve } from "node:path"
+import { basename, join, resolve } from "node:path"
 import {
   DOTFILES_DIR,
   ESP_ROOT,
   FISH_TOOL_COMPLETIONS,
   HOME,
   HOME_DIR,
-  OP_AGENT_SOCK,
+  HOME_DIRS,
   PACKAGES_DIR,
+  OMARCHY_PATH,
+  OP_AGENT_SOCK,
   SKILLS_REPO,
   SKILLS_SRC,
 } from "../../lib/env.ts"
-import { commandExists, extract, probe, which } from "../../lib/exec.ts"
+import { commandExists, env, extract, probe, which } from "../../lib/exec.ts"
 import {
   countFilesRecursive,
-  countSubdirectories,
   isDirectory,
   isSocket,
   pathExists,
   readlinkSafe,
 } from "../../lib/fs.ts"
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
+import { CONFLICT_REASON, planStowAll } from "../../lib/stow.ts"
+import { readEntries } from "../../lib/skills-layout.ts"
+import { IS_OMARCHY, PLATFORM, type Platform } from "../../lib/platform.ts"
+import { backend } from "../../lib/pkgbackend.ts"
 import { VendorManifestJson } from "../../lib/vendor-manifest.ts"
 
 export type Status = "ok" | "warn" | "fail" | "info"
@@ -55,7 +62,7 @@ export type Section = (typeof SECTIONS)[number]
 export type ExtraLine =
   /** Indented, no glyph — e.g. the broken-symlink list. */
   | { kind: "raw"; text: string }
-  /** Its own ⚠ glyph — e.g. the "node is not the Vite+ shim" explanation. */
+  /** Its own ⚠ glyph — e.g. the "node is not the mise shim" explanation. */
   | { kind: "warn"; text: string }
   /** Its own ℹ glyph — e.g. the git signing key. */
   | { kind: "info"; text: string }
@@ -79,6 +86,10 @@ export type Check = {
   label: string
   /** Counts toward the exit code and the "N critical issue(s)" footer. */
   critical?: boolean
+  /** Omitted = every platform. Filtered before running, NOT via isApplicable:
+   *  platform is static, so a Mac-only check must never spawn a subprocess on
+   *  Linux, and view.tsx seeds its pending rows from CHECKS before any result. */
+  platforms?: readonly Platform[]
   run: () => Promise<CheckResult>
 }
 
@@ -91,17 +102,6 @@ const firstVersion = (text: string): string | undefined => extract(text, /([0-9]
 
 const firstLine = (text: string): string => text.split("\n")[0]?.trim() ?? ""
 
-const VITE_PLUS_BIN = join(HOME, ".vite-plus", "bin")
-const VP = join(VITE_PLUS_BIN, "vp")
-const NODE_SHIM = join(VITE_PLUS_BIN, "node")
-
-/** `vp env current` → the bare version. Captured in full: piping vp into an
- *  early-exiting reader SIGPIPEs it into an "Abort trap: 6" (see the original). */
-async function viteplusCurrentNode(): Promise<string | undefined> {
-  const res = await probe([VP, "env", "current"])
-  return extract(res.stdout, /Version\s+(\S+)/)
-}
-
 // ─── Tooling ────────────────────────────────────────────────────────
 
 const brewCheck: Check = {
@@ -109,6 +109,7 @@ const brewCheck: Check = {
   section: "Tooling",
   label: "Homebrew",
   critical: true,
+  platforms: ["darwin"],
   run: async () => {
     const path = await which("brew")
     if (!path) return { status: "fail", message: "Homebrew — missing" }
@@ -123,7 +124,8 @@ const stowCheck: Check = {
   label: "GNU Stow",
   critical: true,
   run: async () => {
-    if (!(await commandExists("stow"))) return { status: "fail", message: "GNU Stow — missing" }
+    if (!(await commandExists("stow")))
+      return { status: "fail", message: `GNU Stow — missing (${backend.installHint("stow")})` }
     const version = firstVersion((await probe(["stow", "--version"])).stdout)
     return { status: "ok", message: `GNU Stow — ${version}` }
   },
@@ -142,10 +144,11 @@ const gitCheck: Check = {
 }
 
 /**
- * Node is owned by Vite+, but Homebrew keeps its own `node` as an unremovable
- * transitive dep of ~12 CLIs. Both exist and can differ by a MAJOR version, so
- * PATH order alone decides which one runs. Report what PATH actually resolves
- * and flag it when the shim is not winning. (AGENTS.md → KEY DECISIONS.)
+ * Is PATH resolving `node` to the version and executable owned by mise?
+ *
+ * The OS package manager keeps its own Node as an unremovable transitive dep of
+ * several CLIs. Both copies can differ by a major version, so PATH order alone
+ * decides which one a shell runs.
  */
 const nodeCheck: Check = {
   id: "node",
@@ -155,20 +158,24 @@ const nodeCheck: Check = {
     const actual = await which("node")
     if (!actual) return { status: "warn", message: "node — missing" }
 
-    const [nodeV, npmV] = await Promise.all([
+    const [nodeV, npmV, miseCurrent] = await Promise.all([
       probe(["node", "--version"]),
       probe(["npm", "--version"]),
+      probe(["mise", "current", "node"]),
     ])
     const message = `node — ${nodeV.stdout.trim()} · npm ${npmV.stdout.trim()} (${actual})`
+    const want = extract(miseCurrent.stdout, /([0-9][^\s]*)/)
+    const got = extract(nodeV.stdout, /v?([0-9][^\s]*)/)
+    // mise resolves through ~/.local/share/mise/{installs,shims}; either is its.
+    const owned = actual.includes("/mise/")
 
-    if ((await pathExists(NODE_SHIM)) && actual !== NODE_SHIM) {
-      const want = await viteplusCurrentNode()
+    if (!miseCurrent.ok || !owned || !want || got !== want) {
       return {
         status: "warn",
         message,
         extra: [
-          { kind: "warn", text: `  ↳ NOT the Vite+ shim — expected v${want ?? "?"} from ${NODE_SHIM}` },
-          { kind: "warn", text: `     ${VITE_PLUS_BIN} is outranked in PATH by ${actual.replace(/\/node$/, "")}` },
+          { kind: "warn", text: `  ↳ NOT mise's node — expected v${want ?? "?"} (mise current node)` },
+          { kind: "warn", text: `     mise is outranked in PATH by ${actual.replace(/\/node$/, "")}` },
         ],
       }
     }
@@ -215,18 +222,6 @@ const goCheck: Check = {
     if (!(await commandExists("go"))) return { status: "warn", message: "go — missing" }
     const version = extract((await probe(["go", "version"])).stdout, /(go[0-9.]+)/)
     return { status: "ok", message: `go — ${version}` }
-  },
-}
-
-const viteplusCheck: Check = {
-  id: "viteplus",
-  section: "Tooling",
-  label: "Vite+",
-  run: async () => {
-    if (!(await pathExists(VP)))
-      return { status: "warn", message: "Vite+ — not installed (dotfiles viteplus)" }
-    const version = firstLine((await probe([VP, "--version"])).stdout)
-    return { status: "ok", message: `Vite+ — ${version}` }
   },
 }
 
@@ -312,8 +307,25 @@ const loginShellCheck: Check = {
   section: "Shell",
   label: "login shell",
   run: async () => {
-    const shell = process.env.SHELL ?? ""
-    if (shell.endsWith("fish")) return { status: "ok", message: `login shell: fish (${shell})` }
+    // NOT $SHELL. That is the shell of the session doctor was launched from, and
+    // chsh only affects sessions started AFTER it runs — so right after a
+    // successful chsh this reported the old shell and told you to run the
+    // command you had just run. commands/fish.ts already reads the system
+    // record for exactly this reason; this check was still on $SHELL.
+    const shell = await systemLoginShell()
+    if (shell === null)
+      return { status: "warn", message: "login shell: could not read the system record" }
+    if (shell.endsWith("fish")) {
+      const current = process.env.SHELL ?? ""
+      if (current.endsWith("fish")) return { status: "ok", message: `login shell: fish (${shell})` }
+      // $SHELL is stamped once at LOGIN, so the compositor and every terminal it
+      // spawns inherit the old value — a new window does not help. Ghostty reads
+      // $SHELL in preference to passwd (verified: unset it and fish resolves).
+      return {
+        status: "warn",
+        message: `login shell: fish, but SHELL=${current} until you log out`,
+      }
+    }
     return { status: "warn", message: `login shell: ${shell} — not fish yet (run: dotfiles fish)` }
   },
 }
@@ -346,7 +358,7 @@ const fishCompletionsCheck: Check = {
         // completions over ours, so "present" was hiding "not the repo's".
         const target = await readlinkSafe(path)
         const resolved = target === null ? path : resolve(dir, target)
-        ;(resolved.startsWith(HOME_DIR) ? ours : shadowed).push(tool)
+        ;(HOME_DIRS.some((d) => resolved.startsWith(d)) ? ours : shadowed).push(tool)
       }),
     )
     // Preserve the declared order rather than completion-race order.
@@ -411,29 +423,48 @@ const fishCompletionsCheck: Check = {
 
 // ─── Skills ─────────────────────────────────────────────────────────
 
+/**
+ * Both layouts are correct — see INSTALL.md. A plain symlink is the cheap case;
+ * a real directory of per-skill links is what Omarchy's own skills force, and
+ * reporting that as "not linked" would send you to a command that is already done.
+ */
+async function skillsPathResult(label: string, path: string, wantLink: string): Promise<CheckResult> {
+  const target = await readlinkSafe(path)
+  if (target === wantLink) return { status: "ok", message: `${label} → ${wantLink}` }
+  if (target !== null)
+    return { status: "warn", message: `${label} → ${target} (expected ${wantLink})` }
+
+  const entries = await readEntries(path)
+  if (entries.length === 0)
+    return { status: "warn", message: `${label} — not linked (dotfiles skills install)` }
+
+  const foreign = entries.filter((e) => e.foreign)
+  const ours = entries.length - foreign.length
+  if (ours === 0)
+    return {
+      status: "warn",
+      message: `${label} — merged dir, none of ours yet (dotfiles skills install)`,
+      extra: [{ kind: "raw", text: `    ${foreign.length} from other providers` }],
+    }
+  return {
+    status: "ok",
+    message: `${label} — merged: ${ours} ours · ${foreign.length} from other providers`,
+  }
+}
+
 const agentsSkillsCheck: Check = {
   id: "skills-agents",
   section: "Skills",
   label: "~/.agents/skills",
-  run: async () => {
-    const target = await readlinkSafe(join(HOME, ".agents", "skills"))
-    if (target !== SKILLS_SRC)
-      return { status: "warn", message: "~/.agents/skills — not linked (dotfiles skills install)" }
-    const count = await countSubdirectories(SKILLS_SRC)
-    return { status: "ok", message: `~/.agents/skills → ${SKILLS_SRC} (${count} skills)` }
-  },
+  run: () => skillsPathResult("~/.agents/skills", join(HOME, ".agents", "skills"), SKILLS_SRC),
 }
 
 const claudeSkillsCheck: Check = {
   id: "skills-claude",
   section: "Skills",
   label: "~/.claude/skills",
-  run: async () => {
-    const target = await readlinkSafe(join(HOME, ".claude", "skills"))
-    if (target !== join(HOME, ".agents", "skills"))
-      return { status: "warn", message: "~/.claude/skills — not linked (dotfiles skills install)" }
-    return { status: "ok", message: "~/.claude/skills → ~/.agents/skills" }
-  },
+  run: () =>
+    skillsPathResult("~/.claude/skills", join(HOME, ".claude", "skills"), join(HOME, ".agents", "skills")),
 }
 
 /** Pi reads the same canonical pool — only checked when Pi is set up here. */
@@ -444,10 +475,11 @@ const piSkillsCheck: Check = {
   run: async () => {
     if (!(await isDirectory(join(HOME, ".pi", "agent"))))
       return { status: "info", message: "" } // filtered out by the renderers
-    const target = await readlinkSafe(join(HOME, ".pi", "agent", "skills"))
-    if (target !== join(HOME, ".agents", "skills"))
-      return { status: "warn", message: "~/.pi/agent/skills — not linked (dotfiles skills install)" }
-    return { status: "ok", message: "~/.pi/agent/skills → ~/.agents/skills" }
+    return await skillsPathResult(
+      "~/.pi/agent/skills",
+      join(HOME, ".pi", "agent", "skills"),
+      join(HOME, ".agents", "skills"),
+    )
   },
 }
 
@@ -464,11 +496,16 @@ const vendoredCheck: Check = {
       Schema.decodeUnknownSync(VendorManifestJson)(await manifest.text()),
     )
     return Result.match(parsed, {
+      // One line per vendor, not all of them joined: the joined form ran to 235
+      // columns, which wraps to three rows on a normal terminal and used to
+      // overflow the panel because the height budget counted it as one.
       ok: (data): CheckResult => ({
         status: "info",
-        message: `vendored: ${data.vendors
-          .map((v) => `${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`)
-          .join(" · ")}`,
+        message: `vendored: ${data.vendors.length} source(s)`,
+        extra: data.vendors.map((v) => ({
+          kind: "raw" as const,
+          text: `${v.source} @ ${v.pinnedCommit.slice(0, 10)} (${v.vendoredOn})`,
+        })),
       }),
       err: (): CheckResult => ({
         status: "warn",
@@ -538,18 +575,7 @@ const gitSigningCheck: Check = {
 
 // ─── Packages ───────────────────────────────────────────────────────
 
-/** Keep only tracked directives, drop trailing options (`, trusted: true`) so
- *  flag churn isn't reported as drift. Port of bash `_bundle_norm`. */
-export function normalizeBundle(text: string): Set<string> {
-  const keep = /^(brew|cask|tap|go|cargo) /
-  return new Set(
-    text
-      .split("\n")
-      .filter((l) => keep.test(l))
-      .map((l) => l.replace(/,.*$/, ""))
-      .sort(),
-  )
-}
+export { normalizeBundle } from "../../lib/brewbackend.ts"
 
 /** Port of bash `[[ "$line" == $pat ]]` — a glob, not a regex. */
 export function globToRegExp(pattern: string): RegExp {
@@ -558,63 +584,256 @@ export function globToRegExp(pattern: string): RegExp {
 }
 
 /**
- * Reverse drift. `brew bundle check` walks the Brewfile asking "is each entry
- * installed?" — it never enumerates the system, so a package installed ad hoc
- * and never added to packages/bundle is invisible to it. That's the silent
- * direction: it works here for months and is simply absent on the next machine.
+ * Forward drift: declared in a manifest, absent from this machine.
+ *
+ * doctor had only the REVERSE direction (untrackedPackagesCheck). The forward
+ * one lived solely in `dotfiles check-packages`, so a package you added to a
+ * manifest on the other machine and never installed here showed up nowhere on
+ * the dashboard — and `go — missing` was reported by the go tool check with no
+ * indication that a manifest already declared it.
+ */
+const missingPackagesCheck: Check = {
+  id: "missing-packages",
+  section: "Packages",
+  label: "declared packages",
+  run: async () => {
+    const declared = await backend.declared()
+    if (declared.size === 0) return { status: "info", message: "" }
+    const installedSet = await backend.installed()
+    if (installedSet.size === 0) return { status: "info", message: "" }
+
+    const missing = [...declared].filter((line) => !installedSet.has(line))
+    const label = backend.manifests.map((m) => `packages/${basename(m)}`).join(" + ")
+    if (missing.length === 0)
+      return { status: "ok", message: `${label} — all ${declared.size} declared installed` }
+
+    return {
+      status: "warn",
+      message: `${missing.length} declared package(s) not installed:`,
+      extra: missing.map((p) => ({ kind: "raw" as const, text: `    ${p}` })),
+    }
+  },
+}
+
+/**
+ * Manifests whose contents nothing else verified.
+ *
+ * `bunCheck`/`rustupCheck` report that the TOOL exists and count what it has
+ * installed, which is not the same question as "is the manifest satisfied" —
+ * a crate added on the other machine was invisible here.
+ */
+const manifestCheck = (
+  id: string,
+  label: string,
+  file: string,
+  installed: () => Promise<Set<string>>,
+  tool: string,
+): Check => ({
+  id,
+  section: "Packages",
+  label,
+  run: async () => {
+    const manifest = Bun.file(join(PACKAGES_DIR, file))
+    if (!(await manifest.exists())) return { status: "info", message: "" }
+    const declared = (await manifest.text())
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "" && !l.startsWith("#"))
+    if (declared.length === 0) return { status: "info", message: "" }
+    if (!(await commandExists(tool)))
+      return { status: "warn", message: `packages/${file} — ${tool} not available` }
+
+    const have = await installed()
+    const missing = declared.filter((d) => !have.has(d))
+    if (missing.length === 0)
+      return { status: "ok", message: `packages/${file} — all ${declared.length} installed` }
+    return {
+      status: "warn",
+      message: `packages/${file} — ${missing.length} of ${declared.length} missing:`,
+      extra: missing.map((m) => ({ kind: "raw" as const, text: `    ${m}` })),
+    }
+  },
+})
+
+const cargoToolsCheck = manifestCheck(
+  "cargo-tools",
+  "packages/cargo.txt",
+  "cargo.txt",
+  async () => {
+    const res = await probe(["cargo", "install", "--list"])
+    if (!res.ok) return new Set()
+    return new Set(
+      res.stdout
+        .split("\n")
+        .filter((l) => l !== "" && !/^[ \t]/.test(l))
+        .map((l) => l.split(" ")[0] ?? "")
+        .filter((n) => n !== ""),
+    )
+  },
+  "cargo",
+)
+
+const goToolsCheck: Check = {
+  id: "go-tools",
+  section: "Packages",
+  label: "packages/go.txt",
+  run: async () => {
+    const manifest = Bun.file(join(PACKAGES_DIR, "go.txt"))
+    if (!(await manifest.exists())) return { status: "info", message: "" }
+    const modules = (await manifest.text())
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "" && !l.startsWith("#"))
+    if (modules.length === 0) return { status: "info", message: "" }
+    if (!(await commandExists("go")))
+      return { status: "warn", message: "packages/go.txt — go not available" }
+
+    // $GOBIN is where `go install` writes, but it only reaches PATH via
+    // conf.d/paths.fish, which skips it until it exists — so a shell started
+    // before the first go tool was installed cannot see any of them. Resolve it
+    // directly rather than reporting seven installed binaries as missing.
+    const binDir = await goBinDir()
+    if (binDir !== "") env.prepend("PATH", binDir)
+
+    // `go install` leaves no manifest, so presence of the binary is the record.
+    const missing: string[] = []
+    for (const module of modules) {
+      const last = module.split("/").at(-1) ?? module
+      const bin = /^v[0-9]+$/.test(last) ? (module.split("/").at(-2) ?? last) : last
+      if (!(await commandExists(bin))) missing.push(bin)
+    }
+    if (missing.length === 0)
+      return { status: "ok", message: `packages/go.txt — all ${modules.length} on PATH` }
+    return {
+      status: "warn",
+      message: `packages/go.txt — ${missing.length} of ${modules.length} not on PATH:`,
+      extra: missing.map((m) => ({ kind: "raw" as const, text: `    ${m}` })),
+    }
+  },
+}
+
+const bunGlobalsCheck = manifestCheck(
+  "bun-globals",
+  "packages/bun-global.txt",
+  "bun-global.txt",
+  async () => {
+    const res = await probe(["bun", "pm", "ls", "-g"])
+    if (!res.ok) return new Set()
+    return new Set(
+      res.stdout
+        .split("\n")
+        .map((l) => extract(l, /──\s+(\S+?)@/))
+        .filter((n): n is string => n !== undefined),
+    )
+  },
+  "bun",
+)
+
+const miseCheck: Check = {
+  id: "mise",
+  section: "Tooling",
+  label: "mise",
+  run: async () => {
+    if (!(await commandExists("mise")))
+      return { status: "warn", message: `mise — not installed (${backend.installHint("mise")})` }
+    const version = firstVersion((await probe(["mise", "--version"])).stdout)
+
+    // `.node-version` is the existing per-project Node pin, and recent mise
+    // ignores it unless the tool is opted in. Nothing else would catch this silently
+    // reverting, and the symptom is per-project pins quietly stopping.
+    const setting = await probe(["mise", "settings", "get", "idiomatic_version_file_enable_tools"])
+    const honoursNodeVersion = setting.ok && setting.stdout.includes("node")
+    if (!honoursNodeVersion) {
+      return {
+        status: "warn",
+        message: `mise — ${version}`,
+        extra: [
+          { kind: "warn", text: "idiomatic_version_file_enable_tools lacks \"node\" — .node-version files are ignored" },
+        ],
+      }
+    }
+    return { status: "ok", message: `mise — ${version} · honours .node-version` }
+  },
+}
+
+/**
+ * Is $HOME actually in sync with the repo?
+ *
+ * `stow-tree` counts tracked files, which says nothing about whether they are
+ * LINKED — editing the repo and forgetting to re-stow looked identical to a
+ * healthy machine. This runs the same planner `dotfiles stow` uses.
+ */
+const stowDriftCheck: Check = {
+  id: "stow-drift",
+  section: "Environment",
+  label: "stow drift",
+  run: async () => {
+    const plan = await planStowAll()
+    const pending = plan.create.length + plan.relink.length
+    if (plan.conflicts.length > 0) {
+      return {
+        status: "warn",
+        message: `stow — ${plan.conflicts.length} conflict(s), ${pending} link(s) pending (dotfiles stow)`,
+        extra: plan.conflicts.slice(0, 6).map((c) => ({
+          kind: "raw" as const,
+          text: `    ${c.path} — ${CONFLICT_REASON[c.reason]}`,
+        })),
+      }
+    }
+    if (pending > 0)
+      return { status: "warn", message: `stow — ${pending} link(s) not placed (dotfiles stow)` }
+    return { status: "ok", message: `stow — ${plan.ok.length} link(s) in place` }
+  },
+}
+
+/** Ignore-file globs, shared by the untracked check and reconcile. */
+export async function ignorePatterns(path: string): Promise<RegExp[]> {
+  const file = Bun.file(path)
+  if (!(await file.exists())) return []
+  return (await file.text())
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"))
+    .map(globToRegExp)
+}
+
+/**
+ * Reverse drift. A `check` walks the manifest asking "is each entry installed?" —
+ * it never enumerates the system, so a package installed ad hoc and never
+ * declared is invisible to it. That's the silent direction: it works here for
+ * months and is simply absent on the next machine.
  */
 const untrackedPackagesCheck: Check = {
   id: "untracked-packages",
   section: "Packages",
-  label: "packages/bundle",
+  label: basename(backend.manifests[0] ?? "packages"),
   run: async () => {
-    if (!(await commandExists("brew"))) return { status: "info", message: "" }
-    const bundlePath = join(PACKAGES_DIR, "bundle")
-    if (!(await Bun.file(bundlePath).exists())) return { status: "info", message: "" }
+    const declared = await backend.declared()
+    if (declared.size === 0) return { status: "info", message: "" }
 
-    // NOTE: dumps to a TEMP file — never to packages/bundle, which carries hand edits.
-    const tmp = join(
-      process.env.TMPDIR ?? "/tmp",
-      `dotfiles-bundle-dump.${process.pid}`,
-    )
-    try {
-      const dump = await probe(["brew", "bundle", "dump", `--file=${tmp}`, "--force"])
-      if (!dump.ok)
-        return { status: "warn", message: "untracked packages — could not dump brew state" }
+    const label = backend.manifests.map((m) => `packages/${basename(m)}`).join(" + ")
+    const installedSet = await backend.installed()
+    if (installedSet.size === 0)
+      return { status: "warn", message: `untracked packages — could not read ${backend.label} state` }
 
-      const [dumped, tracked] = await Promise.all([
-        Bun.file(tmp).text(),
-        Bun.file(bundlePath).text(),
-      ])
-      const trackedSet = normalizeBundle(tracked)
+    // Subtracting the OS baseline is what makes this question the same on both
+    // platforms: "what did I add that I haven't declared". Without it, pacman
+    // answers "the operating system".
+    const [base, patterns] = await Promise.all([
+      backend.baseline(),
+      ignorePatterns(backend.ignoreFile),
+    ])
+    const untracked = [...installedSet]
+      .filter((line) => !declared.has(line))
+      .filter((line) => !base.has(line))
+      .filter((line) => !patterns.some((re) => re.test(line)))
 
-      const ignoreFile = Bun.file(join(PACKAGES_DIR, "bundle.ignore"))
-      const patterns = (await ignoreFile.exists())
-        ? (await ignoreFile.text())
-            .split("\n")
-            .map((l) => l.trim())
-            .filter((l) => l !== "" && !l.startsWith("#"))
-            .map(globToRegExp)
-        : []
+    if (untracked.length === 0) return { status: "ok", message: `${label} — no untracked installs` }
 
-      const untracked = [...normalizeBundle(dumped)]
-        .filter((line) => !trackedSet.has(line))
-        .filter((line) => !patterns.some((re) => re.test(line)))
-
-      if (untracked.length === 0)
-        return { status: "ok", message: "packages/bundle — no untracked installs" }
-
-      return {
-        status: "warn",
-        message: `${untracked.length} installed package(s) missing from packages/bundle:`,
-        extra: untracked.map((p) => ({ kind: "raw" as const, text: `    ${p}` })),
-      }
-    } finally {
-      // try/finally, not the bash pattern of an `rm -f` on every exit path —
-      // where a `set -e` abort in between leaked the temp file.
-      await Bun.file(tmp)
-        .unlink()
-        .catch(() => {})
+    return {
+      status: "warn",
+      message: `${untracked.length} installed package(s) missing from ${label}:`,
+      extra: untracked.map((p) => ({ kind: "raw" as const, text: `    ${p}` })),
     }
   },
 }
@@ -639,10 +858,14 @@ const stowTreeCheck: Check = {
   id: "stow-tree",
   section: "Environment",
   label: "stow tree",
-  run: async () => ({
-    status: "info",
-    message: `stow tree: ${await countFilesRecursive(HOME_DIR)} tracked files under home/`,
-  }),
+  run: async () => {
+    const counts = await Promise.all(
+      HOME_DIRS.map(async (dir) => ({ pkg: basename(dir), n: await countFilesRecursive(dir) })),
+    )
+    const total = counts.reduce((sum, c) => sum + c.n, 0)
+    const detail = counts.map((c) => `${c.pkg} ${c.n}`).join(", ")
+    return { status: "info", message: `stow tree: ${total} tracked files (${detail})` }
+  },
 }
 
 const brokenSymlinksCheck: Check = {
@@ -741,15 +964,115 @@ const espToolchainCheck: Check = {
 
 // ─── registry ───────────────────────────────────────────────────────
 
-export const CHECKS: Check[] = [
+// ─── Linux / Omarchy ────────────────────────────────────────────────
+
+const pacmanCheck: Check = {
+  id: "pacman",
+  section: "Tooling",
+  label: "pacman",
+  critical: true,
+  platforms: ["linux"],
+  run: async () => {
+    if (!(await commandExists("pacman"))) return { status: "fail", message: "pacman — missing" }
+    const version = firstVersion((await probe(["pacman", "--version"])).stdout)
+    const explicit = (await probe(["pacman", "-Qqe"])).stdout.split("\n").filter((l) => l.trim() !== "")
+    return { status: "ok", message: `pacman — ${version} · ${explicit.length} explicit package(s)` }
+  },
+}
+
+const yayCheck: Check = {
+  id: "yay",
+  section: "Tooling",
+  label: "yay",
+  platforms: ["linux"],
+  run: async () => {
+    if (!(await commandExists("yay")))
+      return { status: "warn", message: "yay — not installed (dotfiles pacman)" }
+    return { status: "ok", message: `yay — ${firstVersion((await probe(["yay", "--version"])).stdout)}` }
+  },
+}
+
+const omarchyCheck: Check = {
+  id: "omarchy",
+  section: "Environment",
+  label: "Omarchy",
+  platforms: ["linux"],
+  run: async () => {
+    if (!IS_OMARCHY) return { status: "info", message: "" }
+    const version = (await probe(["cat", "/usr/share/omarchy/version"])).stdout.trim()
+    // `omarchy dev link` repoints OMARCHY_PATH, which moves every default we
+    // layer on top of — worth surfacing before debugging a "wrong" default.
+    const dev = await pathExists("/etc/omarchy.conf")
+    return {
+      status: "info",
+      message: `Omarchy — ${version || "?"}${dev ? " (dev link mode)" : ""} · ${OMARCHY_PATH}`,
+    }
+  },
+}
+
+/** Hyprland keeps running on the last good config, so a broken bindings.lua is
+ *  invisible until you ask. That is exactly the file this repo now tracks. */
+const hyprlandConfigCheck: Check = {
+  id: "hyprland-config",
+  section: "Environment",
+  label: "Hyprland config",
+  platforms: ["linux"],
+  run: async () => {
+    if (!(await commandExists("hyprctl"))) return { status: "info", message: "" }
+    const res = await probe(["hyprctl", "configerrors"])
+    const text = res.stdout.trim()
+    if (!res.ok) return { status: "info", message: "" }
+    if (text === "" || /no config errors/i.test(text))
+      return { status: "ok", message: "Hyprland config — no errors" }
+    return {
+      status: "warn",
+      message: "Hyprland reported config errors:",
+      extra: text
+        .split("\n")
+        .slice(0, 8)
+        .map((l) => ({ kind: "raw" as const, text: `    ${l.trim()}` })),
+    }
+  },
+}
+
+/** Losing these include lines silently breaks `omarchy theme set`. */
+const terminalThemeCheck: Check = {
+  id: "terminal-theme-include",
+  section: "Environment",
+  label: "terminal theming",
+  platforms: ["linux"],
+  run: async () => {
+    if (!IS_OMARCHY) return { status: "info", message: "" }
+    const targets = [
+      { path: join(HOME, ".config", "ghostty", "config"), needle: "current/theme/ghostty.conf" },
+      { path: join(HOME, ".config", "foot", "foot.ini"), needle: "current/theme/foot.ini" },
+    ]
+    const broken: string[] = []
+    for (const t of targets) {
+      const file = Bun.file(t.path)
+      if (!(await file.exists())) continue
+      if (!(await file.text()).includes(t.needle)) broken.push(basename(t.path))
+    }
+    if (broken.length === 0)
+      return { status: "ok", message: "terminal theming — omarchy includes intact" }
+    return {
+      status: "warn",
+      message: `theme include missing from ${broken.join(", ")} — omarchy theme set will not apply`,
+    }
+  },
+}
+
+const ALL_CHECKS: Check[] = [
   brewCheck,
+  pacmanCheck,
+  yayCheck,
   stowCheck,
   gitCheck,
   nodeCheck,
   bunCheck,
   rustupCheck,
   goCheck,
-  viteplusCheck,
+  miseCheck,
   ...agentChecks,
   fishCheck,
   fisherCheck,
@@ -762,15 +1085,28 @@ export const CHECKS: Check[] = [
   vendoredIntegrityCheck,
   onePasswordCheck,
   gitSigningCheck,
+  missingPackagesCheck,
   untrackedPackagesCheck,
+  cargoToolsCheck,
+  goToolsCheck,
+  bunGlobalsCheck,
   pathCheck,
   espToolchainCheck,
   stowTreeCheck,
+  stowDriftCheck,
   brokenSymlinksCheck,
+  omarchyCheck,
+  hyprlandConfigCheck,
+  terminalThemeCheck,
 ]
 
+export const CHECKS: Check[] = ALL_CHECKS.filter(
+  (c) => c.platforms === undefined || c.platforms.includes(PLATFORM),
+)
+
 /** A check that resolved to an empty message is "not applicable here" — e.g.
- *  Pi isn't installed, or there is no vendor manifest. Renderers drop these. */
+ *  Pi isn't installed, or there is no vendor manifest. That is a RUNTIME answer;
+ *  platform is handled by the filter above. Renderers drop these. */
 export const isApplicable = (c: CompletedCheck): boolean => c.result.message !== ""
 
 /**

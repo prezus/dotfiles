@@ -102,12 +102,96 @@ async function removedBundleLines(): Promise<Set<string>> {
  * still not being the type the lookup below needs. This way each entry is
  * checked against Fix and the keys stay visible.
  */
+/**
+ * A fix that simply runs the command the warning already names.
+ *
+ * Most of this file's entries are that, and several checks whose message ends
+ * in "(run: dotfiles X)" had no fix at all — so the TUI showed no `[fix ⏎]` and
+ * pressing return answered "nothing to fix" on a row that names its own remedy.
+ */
+const runsCommand = (label: string, run: () => Promise<number>, done: string): Fix => ({
+  label,
+  run: async () => ((await run()) === 0 ? done : `${label} failed`),
+})
+
 const FIXES = {
+  rustup: runsCommand(
+    "install rustup + toolchains",
+    async () => (await import("../rust.ts")).rust(),
+    "rust toolchains installed",
+  ),
+
+  // `agent-pi`, not `pi` — agentChecks derives its ids from the binary name.
+  // A fix keyed to a non-existent check is silently dead: fixFor returns
+  // undefined, the row shows no [fix ⏎], and nothing says why.
+  "agent-pi": runsCommand(
+    "install pinned Pi plugins",
+    async () => (await import("../pi.ts")).piPlugins(["install"]),
+    "Pi plugins reconciled",
+  ),
+
+  "stow-drift": runsCommand(
+    "re-stow home/ + overlay",
+    async () => (await import("../stow.ts")).stow([]),
+    "stow re-applied",
+  ),
+
+  "cargo-tools": runsCommand(
+    "install missing crates",
+    async () => (await import("../langtools.ts")).langToolsCmd(),
+    "language tools installed",
+  ),
+
+  "go-tools": runsCommand(
+    "install missing go tools",
+    async () => (await import("../langtools.ts")).langToolsCmd(),
+    "language tools installed",
+  ),
+
+  "bun-globals": runsCommand(
+    "install bun globals",
+    async () => (await import("../bunglobals.ts")).bunGlobals(),
+    "bun globals installed",
+  ),
+
+  fisher: runsCommand(
+    "install fisher + plugins",
+    async () => (await import("../fish.ts")).fish(),
+    "fisher plugins installed",
+  ),
+
+  // Declared in a manifest but not installed — the forward drift direction.
+  // The reverse ("installed but undeclared") is untracked-packages below, and
+  // the two must not share a fix: this one INSTALLS, that one edits a manifest.
+  "missing-packages": runsCommand(
+    "install declared packages",
+    async () => (await import("../packages.ts")).retryFailed(),
+    "declared packages installed",
+  ),
+
   "login-shell": {
-    label: "chsh to fish",
+    label: "set the login shell",
     run: async () => {
       const fish = await which("fish")
       if (!fish) return "fish is not installed"
+
+      // Two different problems wear the same warning, and running chsh for the
+      // second one just prints "Shell not changed": passwd may already be fish
+      // while this SESSION's $SHELL is the pre-chsh value. Only a re-login truly
+      // clears that, but set-environment fixes newly spawned terminals now.
+      const { systemLoginShell } = await import("../fish.ts")
+      if ((await systemLoginShell())?.endsWith("fish") === true) {
+        const code = await runInteractiveCode([
+          "systemctl",
+          "--user",
+          "set-environment",
+          `SHELL=${fish}`,
+        ])
+        return code === 0
+          ? "session SHELL updated — new terminals get fish (log out to make it stick)"
+          : "could not update the session SHELL; log out and back in"
+      }
+
       // chsh prompts for a password — must own the terminal.
       const code = await runInteractiveCode(["chsh", "-s", fish], { needsStdin: true })
       return code === 0 ? `login shell → ${fish} (log out/in to apply)` : "chsh failed"

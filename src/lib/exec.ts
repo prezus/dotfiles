@@ -332,11 +332,16 @@ export async function runInteractiveCode(cmd: string[], opts: RunOptions = {}): 
   return Result.unwrapOr(result, 127)
 }
 
-/** Resolved path of an executable, or null. Equivalent to `command -v`. */
-export async function which(bin: string): Promise<string | null> {
-  const res = await probe(["/usr/bin/which", bin])
-  const path = res.stdout.trim()
-  return res.ok && path ? path : null
+/**
+ * Resolved path of an executable, or null. Equivalent to `command -v`.
+ *
+ * Bun.which rather than a which(1) subprocess: /usr/bin/which is not guaranteed
+ * to exist (Fedora dropped it), doctor calls this dozens of times concurrently,
+ * and it must honour the mutable Env or step 4 cannot see step 1's installs.
+ */
+export function which(bin: string): Promise<string | null> {
+  const path = Bun.which(bin, { PATH: env.get("PATH") ?? process.env.PATH })
+  return Promise.resolve(path)
 }
 
 /** Equivalent to the bash `command_exists`. */

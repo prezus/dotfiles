@@ -7,15 +7,20 @@
 import { Result } from "better-result"
 import { Schema } from "effect"
 import { join } from "node:path"
-import { HOME, SKILLS_REPO, SKILLS_SRC } from "../lib/env.ts"
+import {
+  AGENTS_SKILLS_LINK as AGENTS_LINK,
+  CLAUDE_SKILLS_LINK as CLAUDE_LINK,
+  HOME,
+  PI_SKILLS_LINK as PI_LINK,
+  SKILLS_REPO,
+  SKILLS_SRC,
+} from "../lib/env.ts"
+import { detectLayout, mergeInto, readEntries } from "../lib/skills-layout.ts"
 import { runInteractiveCode } from "../lib/exec.ts"
 import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
 import { printError, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 import { VendorManifestJson } from "../lib/vendor-manifest.ts"
 
-const AGENTS_LINK = join(HOME, ".agents", "skills")
-const CLAUDE_LINK = join(HOME, ".claude", "skills")
-const PI_LINK = join(HOME, ".pi", "agent", "skills")
 const PI_DIR = join(HOME, ".pi", "agent")
 
 /** Report what a link did, keeping the "never silently delete" promise visible. */
@@ -49,17 +54,31 @@ async function install(): Promise<number> {
     }
   }
 
-  await reportLink(AGENTS_LINK, SKILLS_SRC)
-  await reportLink(CLAUDE_LINK, AGENTS_LINK)
-  // Pi reads the same canonical pool — link it too, but only if Pi is set up here.
-  if (await isDirectory(PI_DIR)) await reportLink(PI_LINK, AGENTS_LINK)
+  const targets = [AGENTS_LINK, CLAUDE_LINK, ...((await isDirectory(PI_DIR)) ? [PI_LINK] : [])]
+  const layout = await detectLayout(targets)
+
+  if (layout === "linked") {
+    await reportLink(AGENTS_LINK, SKILLS_SRC)
+    await reportLink(CLAUDE_LINK, AGENTS_LINK)
+    if (await isDirectory(PI_DIR)) await reportLink(PI_LINK, AGENTS_LINK)
+    await status()
+    const agents = await readlinkSafe(AGENTS_LINK)
+    const claude = await readlinkSafe(CLAUDE_LINK)
+    return agents === SKILLS_SRC && claude === AGENTS_LINK ? 0 : 1
+  }
+
+  printInfo("another provider has skills here — merging instead of replacing")
+  for (const dir of targets) {
+    const merged = await mergeInto(dir)
+    const parts = [`${merged.linked.length} linked`]
+    if (merged.preserved.length > 0) parts.push(`${merged.preserved.length} preserved`)
+    if (merged.pruned.length > 0) parts.push(`${merged.pruned.length} pruned`)
+    printSuccess(`${dir} — ${parts.join(", ")}`)
+    if (merged.preserved.length > 0) printRaw(`      kept: ${merged.preserved.join(", ")}`)
+  }
 
   await status()
-
-  // INSTALL.md §4: exit zero only if both links resolve to $SKILLS_SRC.
-  const agents = await readlinkSafe(AGENTS_LINK)
-  const claude = await readlinkSafe(CLAUDE_LINK)
-  return agents === SKILLS_SRC && claude === AGENTS_LINK ? 0 : 1
+  return 0
 }
 
 async function update(): Promise<number> {
@@ -96,7 +115,20 @@ async function status(): Promise<number> {
   printInfo(`skills source: ${SKILLS_SRC} (${count} skills)`)
 
   const show = async (label: string, path: string) => {
-    printRaw(`  ${label} → ${(await readlinkSafe(path)) ?? "(not linked)"}`)
+    const target = await readlinkSafe(path)
+    if (target !== null) {
+      printRaw(`  ${label} → ${target}`)
+      return
+    }
+    const entries = await readEntries(path)
+    if (entries.length === 0) {
+      printRaw(`  ${label} → (not linked)`)
+      return
+    }
+    const foreign = entries.filter((e) => e.foreign)
+    const ours = entries.length - foreign.length
+    printRaw(`  ${label} → merged dir: ${ours} ours · ${foreign.length} from other providers`)
+    if (foreign.length > 0) printRaw(`      ${foreign.map((e) => e.name).join(", ")}`)
   }
   await show("~/.agents/skills", AGENTS_LINK)
   await show("~/.claude/skills", CLAUDE_LINK)

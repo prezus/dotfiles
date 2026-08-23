@@ -9,6 +9,7 @@
 // `__commands` subcommand on every tab-complete, so adding an entry here is all
 // that is required — there is no second list to keep in sync.
 import { SCRIPT_NAME, VERSION } from "./lib/env.ts"
+import { PLATFORM, type Platform } from "./lib/platform.ts"
 import { BOLD, RESET, isInteractive, printError } from "./lib/ui.ts"
 
 type Command = {
@@ -17,6 +18,9 @@ type Command = {
   description: string
   /** Longer form for `help`, when the completion blurb is too terse. */
   help?: string
+  /** Omitted = every platform. Filters help and the fish completion; dispatch
+   *  stays permissive so a stale completion cache explains itself. */
+  platforms?: readonly Platform[]
   run: (args: string[]) => Promise<number>
 }
 
@@ -31,26 +35,29 @@ type Command = {
 //
 // Keep it this way. The COMMANDS table is still the single source of truth for
 // help, __commands and therefore the completion — only the module load moved.
-const COMMANDS: Command[] = [
+const ALL_COMMANDS: Command[] = [
   {
     name: "init",
-    description: "Full setup: brew/rust/packages/bun/vite+/Plannotator/stow/Pi/ssh/fish/skills",
-    help: "Full setup: brew → rust → packages → bun → Vite+ → Plannotator → stow → Pi → ssh → fish → skills",
+    description: "Full setup: packages/rust/bun/Plannotator/stow/mise/Pi/ssh/fish/skills",
+    help:
+      "Full setup. macOS: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills\n" +
+      "Linux: pacman/yay → rust → bun → Plannotator → stow → mise → Pi → ssh → fish → skills → omarchy includes",
     run: async () => (await import("./commands/init.ts")).init(),
   },
   {
     name: "update",
-    description: "Update repos, brew, language tools, stow, Pi plugins, and skills",
-    help: "pull repos → brew + rust/cargo/go/bun/fisher/vite+ → re-stow → Pi plugins → skills sync",
+    description: "Update repos, packages, language tools, stow, Pi plugins, and skills",
+    help: "pull repos → brew + rust/cargo/go/bun/fisher → re-stow → Pi plugins → skills sync",
     run: async (args) => (await import("./commands/update.ts")).update(args),
   },
   {
     name: "doctor",
-    description: "Health check (brew, stow, fish, skills links, 1Password, signing)",
+    description: "Health check (packages, stow, fish, skills links, 1Password, signing)",
     run: async (args) => (await import("./commands/doctor/index.ts")).doctor(args),
   },
   {
     name: "brew",
+    platforms: ["darwin"],
     description: "Install Homebrew + everything in packages/bundle",
     help:
       "Install Homebrew, then `brew bundle` packages/bundle — init's brew steps alone.\n" +
@@ -58,17 +65,33 @@ const COMMANDS: Command[] = [
     run: async () => (await import("./commands/homebrew.ts")).homebrew(),
   },
   {
-    name: "reconcile",
-    description: "Resolve each difference between this machine and packages/bundle",
+    name: "pacman",
+    platforms: ["linux"],
+    description: "Install pacman/yay + everything in packages/arch.txt",
+    help: "Install bootstrap packages + yay, then packages/arch.txt and aur.txt.",
+    run: async () => (await import("./commands/pacman.ts")).pacmanCmd(),
+  },
+  {
+    name: "omarchy-includes",
+    platforms: ["linux"],
+    description: "Add our managed include to Omarchy's ghostty/foot configs",
     help:
-      "Walk every mismatch one at a time: keep it (declare in the bundle), remove it,\n" +
+      "Append a managed include line to the Omarchy-owned terminal configs.\n" +
+      "Re-run after `omarchy refresh config` reverts one.",
+    run: async () => (await import("./commands/omarchy.ts")).omarchyIncludes(),
+  },
+  {
+    name: "reconcile",
+    description: "Resolve each difference between this machine and the package manifests",
+    help:
+      "Walk every mismatch one at a time: keep it (declare it), remove it,\n" +
       "or never track it. Uninstalls are batched behind a single confirm.",
     run: async () => (await import("./commands/reconcile.ts")).reconcile(),
   },
   {
     name: "stow",
-    description: "Re-symlink home/ into $HOME (--adopt on an existing machine)",
-    help: "Re-symlink home/ → $HOME  (--adopt on an existing machine, --dry-run to preview)",
+    description: "Re-symlink home/ + the platform overlay into $HOME",
+    help: "Re-symlink home/ + home-<platform>/ → $HOME  (--adopt on an existing machine, --dry-run to preview)",
     run: async (args) => (await import("./commands/stow.ts")).stow(args),
   },
   {
@@ -82,10 +105,9 @@ const COMMANDS: Command[] = [
     run: async () => (await import("./commands/bunglobals.ts")).bunGlobals(),
   },
   {
-    name: "viteplus",
-    description: "Install Vite+ (vp/vpr)",
-    help: "Install Vite+ (vp/vpr) to ~/.vite-plus",
-    run: async () => (await import("./commands/viteplus.ts")).viteplus(),
+    name: "lang-tools",
+    description: "Install crates + go tools from packages/{cargo,go}.txt",
+    run: async () => (await import("./commands/langtools.ts")).langToolsCmd(),
   },
   {
     name: "rust",
@@ -118,7 +140,7 @@ const COMMANDS: Command[] = [
   },
   {
     name: "check-packages",
-    description: "Show which Brewfile packages are missing",
+    description: "Show which declared packages are missing",
     run: async () => (await import("./commands/packages.ts")).checkPackages(),
   },
   {
@@ -140,6 +162,10 @@ const COMMANDS: Command[] = [
     },
   },
 ]
+
+const COMMANDS: Command[] = ALL_COMMANDS.filter(
+  (c) => c.platforms === undefined || c.platforms.includes(PLATFORM),
+)
 
 /** Machine-readable `name<TAB>description`, one per line — powers the fish completion. */
 function printCommands(): void {
@@ -203,6 +229,11 @@ async function main(argv: string[]): Promise<number> {
 
   const command = COMMANDS.find((c) => c.name === name)
   if (!command) {
+    const otherPlatform = ALL_COMMANDS.find((c) => c.name === name)
+    if (otherPlatform) {
+      printError(`${name} is ${otherPlatform.platforms?.join("/")}-only (this is ${PLATFORM})`)
+      return 1
+    }
     printError(`unknown command: ${name}`)
     printHelp()
     return 1

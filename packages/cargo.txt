@@ -1,0 +1,16 @@
+# Cargo crates installed with `cargo install`.
+#
+# Language-toolchain manifest, like rust.txt and bun-global.txt — NOT tied to
+# either OS package manager. These were `cargo "…"` lines in packages/bundle,
+# which meant only `brew bundle` installed them and Linux silently got none.
+# espup lives here, so `dotfiles rust` can find it for the ESP toolchain.
+
+cargo-expand
+cargo-update
+cargo-zigbuild
+create-gpui-app
+dioxus-cli
+esp-generate
+espflash
+espup
+ldproxy

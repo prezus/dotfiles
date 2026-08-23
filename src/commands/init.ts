@@ -1,17 +1,22 @@
 // `dotfiles init` — wire a machine from zero.
 //
-// The ORDER IS LOAD-BEARING and was previously encoded only in comments:
-//   - rust BEFORE packages, because packages/bundle contains `cargo "…"` entries
-//     that need a working cargo
-//   - ESP AFTER packages, because espup is itself one of those cargo entries
-//   - stow AFTER Vite+, because Vite+ writes conf.d/vite-plus.fish into the repo
+// The ORDER IS LOAD-BEARING:
+//   - rust BEFORE packages on darwin, because packages/bundle has `cargo "…"`
+//     entries that need a working cargo. arch.txt has none, so linux runs the
+//     package step first — it is also what installs stow.
+//   - ESP AFTER packages on darwin, because espup is one of those cargo entries
+//   - mise AFTER stow, because its tracked config must exist before installation
 //   - skills LAST, since it only wires symlinks
 //
 // Every step also depends on earlier steps having amended the shared Env — see
-// src/lib/exec.ts. On a fresh machine `brew` does not exist when this starts.
+// src/lib/exec.ts. On a fresh machine the package manager does not exist when
+// this starts.
 import { bunGlobals } from "./bunglobals.ts"
 import { fish } from "./fish.ts"
 import { ensureHomebrew } from "./homebrew.ts"
+import { omarchyIncludes } from "./omarchy.ts"
+import { pacmanCmd } from "./pacman.ts"
+import { langTools } from "./langtools.ts"
 import { installPackages } from "./packages.ts"
 import { plannotator } from "./plannotator.ts"
 import { piPlugins } from "./pi.ts"
@@ -19,8 +24,9 @@ import { applyRustList, installRustEsp, installRustup } from "./rust.ts"
 import { skills } from "./skills.ts"
 import { ssh } from "./ssh.ts"
 import { stow } from "./stow.ts"
-import { viteplus } from "./viteplus.ts"
+import { runInteractiveCode } from "../lib/exec.ts"
 import { runSteps, type Step } from "../lib/steps.ts"
+import { IS_DARWIN } from "../lib/platform.ts"
 import { getStepSink, printError, printHeader, printSuccess, printWarning } from "../lib/ui.ts"
 
 /** Adapt a command that returns an exit code into a step outcome. */
@@ -29,7 +35,91 @@ const fromExitCode = async (fn: () => Promise<number>) => {
   return { ok: code === 0 }
 }
 
+/**
+ * Two arrays, not one filtered list: the ordering rationale above differs per
+ * platform, and a filter would leave the Linux order implicit.
+ */
 export function initSteps(): Step[] {
+  return IS_DARWIN ? darwinSteps() : linuxSteps()
+}
+
+/** Steps whose ordering and rationale are identical on both platforms. */
+function sharedTail(): Step[] {
+  return [
+    { id: "bun", title: "Bun globals", run: () => fromExitCode(bunGlobals) },
+    { id: "plannotator", title: "Plannotator", run: () => fromExitCode(plannotator) },
+    {
+      id: "stow",
+      title: "Stow dotfiles",
+      required: true,
+      run: () => fromExitCode(() => stow([])),
+    },
+    {
+      id: "mise",
+      title: "mise toolchains",
+      run: () => fromExitCode(() => runInteractiveCode(["mise", "install"])),
+    },
+    {
+      id: "pi",
+      title: "Pi plugins",
+      run: () => fromExitCode(() => piPlugins(["install"])),
+    },
+    { id: "ssh", title: "SSH config", run: () => fromExitCode(ssh) },
+    { id: "fish", title: "Fish shell", run: () => fromExitCode(fish) },
+    { id: "skills", title: "Skills", run: () => fromExitCode(() => skills(["install"])) },
+  ]
+}
+
+function linuxSteps(): Step[] {
+  return [
+    {
+      // Also installs base-devel/git/STOW — nothing else does, and the stow step
+      // is nine steps later.
+      id: "pacman",
+      title: "Packages (pacman + yay)",
+      required: true,
+      run: () => fromExitCode(pacmanCmd),
+    },
+    {
+      id: "rust",
+      // rustup's own installer on both: Arch's rustup package would be a
+      // chicken/egg against the packages step, and rust.txt needs
+      // rustup-managed toolchains for ESP anyway.
+      run: async () => {
+        const installed = await installRustup()
+        const configured = installed ? await applyRustList() : false
+        const ok = installed && configured
+        return { ok, detail: ok ? undefined : "rust setup incomplete" }
+      },
+      title: "Rust (rustup)",
+    },
+    {
+      // BEFORE rust-esp: espup is one of these crates, and the ESP step gates on
+      // it. Placing it after was the bug that made `dotfiles rust` report
+      // "espup not installed yet (comes from packages/bundle)" on Linux.
+      id: "lang-tools",
+      title: "Language tools (cargo/go)",
+      run: () => langTools(),
+    },
+    {
+      id: "rust-esp",
+      title: "Rust (ESP)",
+      run: async () => {
+        const ok = await installRustEsp()
+        return { ok, detail: ok ? undefined : "ESP toolchain incomplete" }
+      },
+    },
+    ...sharedTail(),
+    {
+      // After stow: it references the personal.conf that stow places.
+      id: "omarchy-includes",
+      title: "Omarchy terminal includes",
+      run: () => fromExitCode(omarchyIncludes),
+    },
+  ]
+}
+
+function darwinSteps(): Step[] {
   return [
     {
       id: "homebrew",
@@ -55,31 +145,23 @@ export function initSteps(): Step[] {
       run: () => installPackages(),
     },
     {
+      // BEFORE rust-esp: espup is one of these crates, and the ESP step gates on
+      // it. Placing it after was the bug that made `dotfiles rust` report
+      // "espup not installed yet (comes from packages/bundle)" on Linux.
+      id: "lang-tools",
+      title: "Language tools (cargo/go)",
+      run: () => langTools(),
+    },
+    {
       id: "rust-esp",
       title: "Rust (ESP)",
-      // After packages: espup is a cargo tool from the bundle.
+      // After lang-tools: espup is one of its crates.
       run: async () => {
         const ok = await installRustEsp()
         return { ok, detail: ok ? undefined : "ESP toolchain incomplete" }
       },
     },
-    { id: "bun", title: "Bun globals", run: () => fromExitCode(bunGlobals) },
-    { id: "viteplus", title: "Vite+", run: () => fromExitCode(viteplus) },
-    { id: "plannotator", title: "Plannotator", run: () => fromExitCode(plannotator) },
-    {
-      id: "stow",
-      title: "Stow dotfiles",
-      required: true,
-      run: () => fromExitCode(() => stow([])),
-    },
-    {
-      id: "pi",
-      title: "Pi plugins",
-      run: () => fromExitCode(() => piPlugins(["install"])),
-    },
-    { id: "ssh", title: "SSH config", run: () => fromExitCode(ssh) },
-    { id: "fish", title: "Fish shell", run: () => fromExitCode(fish) },
-    { id: "skills", title: "Skills", run: () => fromExitCode(() => skills(["install"])) },
+    ...sharedTail(),
   ]
 }
 

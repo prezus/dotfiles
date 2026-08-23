@@ -1,0 +1,25 @@
+# Installed on purpose, never tracked. One glob per line, matched against the
+# `pacman "name"` / `aur "name"` directives the drift check builds.
+#
+# NOTE this file is now SMALL by design. Omarchy's own install manifests are the
+# baseline (see PackageBackend.baseline), so everything the distro provides is
+# already excluded without being listed here. What remains is only what the ARCH
+# INSTALLER put on this machine and which is machine-specific — installing this
+# box's microcode or bootloader on another machine ranges from pointless to
+# harmful.
+
+# ─── Hardware, firmware, boot ───────────────────────────────────────
+pacman "intel-ucode"
+pacman "lib32-vulkan-intel"
+pacman "efibootmgr"
+pacman "mkinitcpio"
+
+# ─── Base system the Arch installer placed ──────────────────────────
+pacman "sudo"
+
+# ─── Omarchy's own meta-packages ────────────────────────────────────
+#     Delivered by the distro's update channel, not by us.
+pacman "omarchy"
+pacman "omarchy-keyring"
+pacman "omarchy-settings"
+pacman "omazed"

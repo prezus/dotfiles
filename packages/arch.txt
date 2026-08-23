@@ -1,0 +1,40 @@
+# Arch/Omarchy package manifest — the pacman half of packages/bundle.
+#
+# ONLY what we add ON TOP of the OS. This is deliberately short: Omarchy already
+# ships ~206 packages including the whole dev toolchain (bat, eza, fd, fzf,
+# ripgrep, lazygit, docker, mise, tmux, starship, …). Re-declaring those would
+# claim ownership of packages the distro maintains, and an `omarchy update` that
+# changed one would surface as our drift.
+#
+# The baseline is read at runtime from /usr/share/omarchy/install/*.packages,
+# so it stays correct across Omarchy upgrades without anything to maintain here.
+# Before adding a line, check it is not already provided:
+#   grep -x '<pkg>' /usr/share/omarchy/install/*.packages
+#
+# On plain Arch (no Omarchy) the baseline falls back to the base/base-devel
+# groups, so this file legitimately needs to be longer there.
+
+# ─── Shell & terminal ───────────────────────────────────────────────
+fish
+ghostty
+
+# ─── Development ────────────────────────────────────────────────────
+github-cli
+zed
+
+# ─── Language toolchains ────────────────────────────────────────────
+#     Not in Omarchy's baseline, and packages/go.txt needs it. rust comes from
+#     rustup's own installer instead (see the `rust` init step).
+go
+
+# ─── Required by the dotfiles CLI itself ────────────────────────────
+#     `dotfiles pacman` also installs this during bootstrap, before the stow
+#     step can run. Declared here so a re-run and the drift check agree.
+stow
+
+# ─── Security ───────────────────────────────────────────────────────
+1password
+1password-cli
+
+# ─── Applications ───────────────────────────────────────────────────
+steam

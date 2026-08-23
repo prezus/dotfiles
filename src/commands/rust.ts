@@ -1,9 +1,9 @@
 // `dotfiles rust` — rustup toolchains, components and targets.
 //
-// Rust is NOT in the Brewfile: brew's single `rust` formula can't manage the
-// cross/embedded toolchains and targets this setup needs. This runs BEFORE
-// package install during init, so `cargo` exists for the bundle's `cargo "…"`
-// entries — which is why activating cargo on PATH here matters.
+// Rust is NOT an OS package on either platform: brew's single `rust` formula
+// (and Arch's `rustup` package) can't manage the cross/embedded toolchains and
+// targets this setup needs. This runs BEFORE the lang-tools step, so `cargo`
+// exists for packages/cargo.txt — which is why activating cargo on PATH matters.
 import { join } from "node:path"
 import { PACKAGES_DIR } from "../lib/env.ts"
 import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
@@ -97,7 +97,7 @@ export async function applyRustList(options: RustOptions = {}): Promise<boolean>
 
 /**
  * ESP (Xtensa) toolchain via espup. Separate from the rest because `espup` is a
- * cargo tool from packages/bundle, so this must run AFTER package install.
+ * cargo tool from packages/cargo.txt, so this must run AFTER the lang-tools step.
  */
 export async function installRustEsp(options: RustOptions = {}): Promise<boolean> {
   const file = Bun.file(options.rustListPath ?? RUST_LIST)
@@ -107,7 +107,7 @@ export async function installRustEsp(options: RustOptions = {}): Promise<boolean
   if (!wanted) return true
 
   if (!(await runtime.commandExists("espup"))) {
-    printWarning("espup not installed yet (comes from packages/bundle); skipping ESP toolchain")
+    printWarning("espup not installed yet (packages/cargo.txt — run: dotfiles lang-tools)")
     return false
   }
 
@@ -139,7 +139,7 @@ export async function rust(): Promise<number> {
   return listOk && espOk ? 0 : 1
 }
 
-/** `dotfiles viteplus` and friends need this too; exported for init. */
+/** Other setup commands and init need this too. */
 export async function cargoInstalled(): Promise<boolean> {
   return (await commandExists("cargo")) || (await pathExists(join(env.get("HOME") ?? "", ".cargo", "bin", "cargo")))
 }

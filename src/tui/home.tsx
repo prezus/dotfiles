@@ -23,6 +23,7 @@ import {
   reduceOutputKey,
 } from "./interaction.ts"
 import { copySelection, isCopyKey } from "./clipboard.ts"
+import { hiddenCounts, windowFor, wrappedRows } from "./scroll.ts"
 import { useTerminalSize } from "./use-terminal-size.ts"
 import { FLUSH_MS, paneRows, statusBar } from "./output-pane.ts"
 import { TerminalSession, type TerminalFrame, type TerminalRun } from "./terminal-session.ts"
@@ -111,6 +112,9 @@ function Home({
 }) {
   // Re-render and resize the embedded terminal when the window changes.
   const size = useTerminalSize()
+  // Scroll anchor for the command list. A ref, not state: windowFor derives the
+  // next start from the previous one, and storing it in state would re-render.
+  const commandStartRef = useRef(0)
   const renderer = useRenderer()
   const [state, setState] = useState(initialHomeState)
   const [summary, setSummary] = useState<Summary>({ checks: null, stow: null })
@@ -465,6 +469,29 @@ function Home({
     </box>
   )
 
+  // Chrome around the command list, counted at its WORST case: padding 2,
+  // title 1, stats 4, "commands" header 2, and a footer of rule + scroll
+  // indicator + status + hints = 4. Budgeting the common case instead would
+  // overflow by a row exactly when a command is running (status shown) on a
+  // list long enough to scroll — i.e. only under load.
+  const viewport = Math.max(3, size.rows - 13)
+  const cursor = Math.min(state.cursor, commands.length - 1)
+  // A command row is `❯ name<pad to 16> description`, and a long description
+  // wraps on a narrow terminal — windowFor budgets one row each, so cap the
+  // count by the widest row's real height rather than letting it overflow.
+  const widest = commands.reduce(
+    (n, c) => Math.max(n, wrappedRows(`${c.name.padEnd(16)}${c.description}`, size.columns - 4, 3)),
+    1,
+  )
+  const rowWindow = windowFor(
+    commandStartRef.current,
+    commands.length,
+    cursor,
+    Math.max(3, Math.floor(viewport / widest)),
+  )
+  commandStartRef.current = rowWindow.start
+  const { above, below } = hiddenCounts(rowWindow, commands.length)
+
   return (
     <box key="home" flexDirection="column" padding={1} flexGrow={1}>
       <box flexDirection="row" justifyContent="space-between">
@@ -498,8 +525,8 @@ function Home({
         <text fg={theme.fg} attributes={BOLD}>
           commands
         </text>
-        {commands.map((command, index) => {
-          const active = index === Math.min(state.cursor, commands.length - 1)
+        {commands.slice(rowWindow.start, rowWindow.end).map((command, offset) => {
+          const active = rowWindow.start + offset === cursor
           return (
             <box key={command.name} flexDirection="row">
               <text fg={active ? theme.orange : theme.bgSoft}>{active ? " ❯ " : "   "}</text>
@@ -512,6 +539,13 @@ function Home({
 
       <box marginTop="auto" flexDirection="column">
         <text fg={theme.dim}>{rule}</text>
+        {(above > 0 || below > 0) && (
+          <text fg={theme.dim}>
+            {[above > 0 ? `↑ ${above} above` : null, below > 0 ? `↓ ${below} below` : null]
+              .filter((s) => s !== null)
+              .join(" · ")}
+          </text>
+        )}
         {status !== "" && <text fg={busy ? theme.orange : theme.gray}>{status}</text>}
         <text fg={theme.bgHard}>↑↓ nav · a-z jump · ⏎ run · r refresh · q quit</text>
       </box>

@@ -19,7 +19,7 @@ export type PackageRuntime = {
   warmSudo: (reason: string) => Promise<SudoSession>
 }
 
-const defaultRuntime: PackageRuntime = {
+export const defaultRuntime: PackageRuntime = {
   commandExists,
   runInteractiveCode,
   probe,

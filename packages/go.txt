@@ -1,0 +1,12 @@
+# Go tools installed with `go install <module>@latest`.
+#
+# Same rationale as cargo.txt: cross-platform, toolchain-managed, and
+# previously reachable only through `brew bundle`.
+
+github.com/air-verse/air
+github.com/melkeydev/go-blueprint
+github.com/pressly/goose/v3/cmd/goose
+golang.org/x/tools/gopls
+github.com/sqlc-dev/sqlc/cmd/sqlc
+honnef.co/go/tools/cmd/staticcheck
+github.com/a-h/templ/cmd/templ

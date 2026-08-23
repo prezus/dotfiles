@@ -1,5 +1,5 @@
 # Rust toolchain managed by `dotfiles rust` (rustup — not brew, for cross/embedded targets).
-# Format: '<kind> <value>'. Applied to rustup; cargo global tools live in packages/bundle.
+# Format: '<kind> <value>'. Applied to rustup; cargo global tools live in packages/cargo.txt.
 
 # Toolchains
 toolchain stable
@@ -19,5 +19,5 @@ target riscv32imafc-unknown-none-elf
 target riscv32imc-unknown-none-elf
 target x86_64-apple-ios
 
-# ESP (Xtensa) toolchain — installed via 'espup' (a packages/bundle cargo tool)
+# ESP (Xtensa) toolchain — installed via 'espup' (packages/cargo.txt, dotfiles lang-tools)
 esp true
