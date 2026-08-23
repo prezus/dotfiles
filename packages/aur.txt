@@ -1,3 +1,4 @@
 # AUR packages, installed with `yay -S --needed`.
 # Kept separate from arch.txt because yay must never run under sudo.
 google-chrome
+wootility
