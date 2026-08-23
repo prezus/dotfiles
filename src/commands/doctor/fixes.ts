@@ -163,11 +163,22 @@ const FIXES = {
   // Declared in a manifest but not installed — the forward drift direction.
   // The reverse ("installed but undeclared") is untracked-packages below, and
   // the two must not share a fix: this one INSTALLS, that one edits a manifest.
-  "missing-packages": runsCommand(
-    "install declared packages",
-    async () => (await import("../packages.ts")).retryFailed(),
-    "declared packages installed",
-  ),
+  //
+  // Goes through `backend`, NOT packages.ts. That module is the Homebrew half
+  // of the split — `retryFailed` re-runs `brew bundle install` against
+  // packages/bundle — so on Linux this fix shelled out to a binary that is not
+  // there and reported "install declared packages failed" on a row listing
+  // pacman entries. The check above already reads through the backend; the fix
+  // has to resolve the same way or the two disagree about which OS they run on.
+  "missing-packages": {
+    label: "install declared packages",
+    run: async () => {
+      const { backend } = await import("../../lib/pkgbackend.ts")
+      const { defaultRuntime } = await import("../packages.ts")
+      const outcome = await backend.install(defaultRuntime)
+      return outcome.detail ?? (outcome.ok ? "declared packages installed" : "install failed")
+    },
+  },
 
   "login-shell": {
     label: "set the login shell",

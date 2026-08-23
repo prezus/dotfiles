@@ -154,15 +154,13 @@ async function install(runtime: PackageRuntime): Promise<StepOutcome> {
         )
       : null
 
-  let failed = 0
   try {
     if (gaps.pacman.length > 0) {
       printInfo(`Installing ${gaps.pacman.length} package(s) with pacman`)
-      const code = await runtime.runInteractiveCode(
+      await runtime.runInteractiveCode(
         ["sudo", "pacman", "-S", "--needed", "--noconfirm", ...gaps.pacman],
         { needsStdin: true },
       )
-      if (code !== 0) failed += gaps.pacman.length
     }
   } finally {
     sudo?.release()
@@ -170,16 +168,21 @@ async function install(runtime: PackageRuntime): Promise<StepOutcome> {
 
   if (gaps.aur.length > 0) {
     printInfo(`Installing ${gaps.aur.length} AUR package(s) with yay`)
-    const code = await runtime.runInteractiveCode(
-      ["yay", "-S", "--needed", "--noconfirm", ...gaps.aur],
-      { needsStdin: true },
-    )
-    if (code !== 0) failed += gaps.aur.length
+    await runtime.runInteractiveCode(["yay", "-S", "--needed", "--noconfirm", ...gaps.aur], {
+      needsStdin: true,
+    })
   }
 
-  if (failed > 0) {
-    printWarning("Some packages failed — retry with: dotfiles retry-failed")
-    return { ok: false, detail: `${failed} package(s) failed to install` }
+  // Ask the package manager what landed rather than reading the exit code. One
+  // batch is one invocation, so a single unbuildable AUR package makes yay exit
+  // nonzero for the whole run — blaming every name in that batch reported "2
+  // package(s) failed" when wootility had installed and only twingate had not.
+  // The names matter too: "twingate" is a fixable fact, "2 failed" is not.
+  const stillMissing = await missing()
+  const remaining = [...stillMissing.pacman, ...stillMissing.aur]
+  if (remaining.length > 0) {
+    printWarning(`Not installed: ${remaining.join(", ")} — retry with: dotfiles retry-failed`)
+    return { ok: false, detail: `${remaining.length} package(s) failed to install` }
   }
   return { ok: true, detail: `installed ${total} package entries` }
 }

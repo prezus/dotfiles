@@ -141,12 +141,21 @@ const ALL_COMMANDS: Command[] = [
   {
     name: "check-packages",
     description: "Show which declared packages are missing",
-    run: async () => (await import("./commands/packages.ts")).checkPackages(),
+    run: async () => {
+      const { backend } = await import("./lib/pkgbackend.ts")
+      const { defaultRuntime } = await import("./commands/packages.ts")
+      return backend.check(defaultRuntime)
+    },
   },
   {
     name: "retry-failed",
     description: "Reinstall packages that failed during init",
-    run: async () => (await import("./commands/packages.ts")).retryFailed(),
+    run: async () => {
+      const { backend } = await import("./lib/pkgbackend.ts")
+      const { defaultRuntime } = await import("./commands/packages.ts")
+      const outcome = await backend.install(defaultRuntime)
+      return outcome.ok ? 0 : 1
+    },
   },
   {
     name: "keys",
