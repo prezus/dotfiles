@@ -2,3 +2,7 @@
 # Kept separate from arch.txt because yay must never run under sudo.
 google-chrome
 wootility
+
+# Zero-trust VPN client. No official repo package; the vendor ships .deb/.rpm
+# only, so the AUR PKGBUILD is the packaged route on Arch.
+twingate

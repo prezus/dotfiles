@@ -20,12 +20,34 @@ ghostty
 
 # ─── Development ────────────────────────────────────────────────────
 github-cli
+just
 zed
 
 # ─── Language toolchains ────────────────────────────────────────────
 #     Not in Omarchy's baseline, and packages/go.txt needs it. rust comes from
 #     rustup's own installer instead (see the `rust` init step).
 go
+elixir
+zig
+jdk-openjdk
+jupyterlab
+#     Node itself is mise's, and bun has its own installer — these are the two
+#     package managers projects pin in their lockfiles, nothing more.
+pnpm
+yarn
+typescript
+
+# ─── Language servers, linters, formatters ──────────────────────────
+#     Editor-facing tools. rust-analyzer is absent on purpose: rustup ships it
+#     as a component (packages/rust.txt), so a pacman copy would shadow the one
+#     matching the active toolchain.
+bash-language-server
+lua-language-server
+luacheck
+stylua
+prettier
+typescript-language-server
+golangci-lint
 
 # ─── Required by the dotfiles CLI itself ────────────────────────────
 #     `dotfiles pacman` also installs this during bootstrap, before the stow
@@ -36,5 +58,21 @@ stow
 1password
 1password-cli
 
+# ─── Fonts ──────────────────────────────────────────────────────────
+#     home-linux/.config/ghostty/personal.conf names Monaspace Neon/Xenon/Radon
+#     and home/.config/zed/settings.json names Xenon/Neon. Without these the
+#     configs stow cleanly and silently render in a fallback face.
+#     One package per build, mirroring the four casks in packages/bundle:
+#     static OTFs — "Monaspace Neon", "Monaspace Xenon", …
+otf-monaspace
+#     variable — "Monaspace Xenon Var"
+ttf-monaspace-variable
+#     Nerd Font patched, for devicon/powerline glyphs
+otf-monaspace-nerd
+#     static instances of the variable axes
+ttf-monaspace-frozen
+#     JetBrains Mono is already in Omarchy's baseline (ttf-jetbrains-mono-nerd-basic).
+
 # ─── Applications ───────────────────────────────────────────────────
 steam
+discord
