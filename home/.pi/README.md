@@ -26,7 +26,8 @@ directory.
 
 ## Extensions
 
-Run `/zed` from any Pi session to open `ctx.cwd` in Zed through macOS `open`.
+Run `/zed` from any Pi session to open `ctx.cwd` in Zed. It uses macOS `open`
+on Darwin and the `zeditor` CLI supplied by the Arch package on Linux.
 
 `agent/settings.json` is the package manifest. Every npm source has an exact version. Bun installs
 those sources into the ignored `~/.pi/agent/npm/` runtime directory; `dotfiles pi install`

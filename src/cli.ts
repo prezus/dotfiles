@@ -149,6 +149,15 @@ const ALL_COMMANDS: Command[] = [
     run: async () => (await import("./commands/packages.ts")).retryFailed(),
   },
   {
+    name: "keys",
+    description: "Keyboard visualizer: see what your keys send, record and diff machines",
+    help:
+      "Serve a keyboard visualizer and open it.  --raw reads evdev below the\n" +
+      "compositor (Linux), so chords Hyprland grabs are still visible.\n" +
+      "record <name> captures this machine; diff <a> <b> compares two.",
+    run: async (args) => (await import("./commands/keys.ts")).keys(args),
+  },
+  {
     name: "edit",
     description: "Open the dotfiles repo in $EDITOR",
     run: async () => (await import("./commands/edit.ts")).edit(),

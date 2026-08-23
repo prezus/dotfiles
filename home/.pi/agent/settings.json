@@ -5,7 +5,9 @@
   "defaultModel": "gpt-5.6-sol",
   "defaultThinkingLevel": "medium",
   "quietStartup": false,
-  "npmCommand": ["bun"],
+  "npmCommand": [
+    "bun"
+  ],
   "subagents": {
     "defaultModel": "openai-codex/gpt-5.6-luna",
     "defaultThinking": "low",

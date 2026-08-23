@@ -91,3 +91,9 @@ export const OWNED_LINKS = [AGENTS_SKILLS_LINK, CLAUDE_SKILLS_LINK, PI_SKILLS_LI
 export const SCRIPT_NAME = "dotfiles"
 // Single source of truth — package.json, so `--version` can't drift from it.
 export { version as VERSION } from "../../package.json" with { type: "json" }
+
+/** Stable keyboard device names. `/dev/input/event*` renumbers between boots. */
+export const INPUT_BY_ID_DIR = "/dev/input/by-id"
+
+/** Where `dotfiles keys record` writes a captured machine profile. */
+export const KEYMAPS_DIR = join(DOTFILES_DIR, "keymaps")
