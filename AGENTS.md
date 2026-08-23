@@ -18,6 +18,7 @@ dotfiles/
 │   ├── cli.ts                #   COMMANDS table — single source of truth for help + completions
 │   ├── commands/             #   one module per subcommand; doctor/ has checks|fixes|view|plain
 │   ├── lib/                  #   env, exec (subprocess + PATH threading), fs, brew, stow, steps
+│   │   └── keyboard/         #   `dotfiles keys` — evdev reader, chord model, visualizer page
 │   └── tui/                  #   the ONLY OpenTUI-aware code (renderer, theme, pickers)
 ├── home/                     # SHARED stow package — correct on both platforms
 │   ├── .gitconfig            #   (+ an optional include of the platform overlay)
@@ -52,6 +53,8 @@ dotfiles/
 | Add a CLI tool (Linux) | add the bare name to `packages/arch.txt` (or `aur.txt`) |
 | Add a JS global with **no** native package | add to `packages/bun-global.txt` (installed by `dotfiles bun`) |
 | Add a cargo crate or go tool | `packages/cargo.txt` / `packages/go.txt` — cross-platform, NOT the Brewfile |
+| Find out what a key actually sends | `dotfiles keys` (`--raw` on Linux reads below the compositor) |
+| Compare two machines' shortcuts | `dotfiles keys record <name>` on each, then `dotfiles keys diff <a> <b>` |
 | Silence a package in the drift check | add a glob to `packages/bundle.ignore` — only for things that must NEVER be tracked |
 | VS Code extension | **never here** — it's VS Code Settings Sync (sign in) |
 | Shell alias / abbr (fish) | `home/.config/fish/conf.d/zz-aliases.fish` |

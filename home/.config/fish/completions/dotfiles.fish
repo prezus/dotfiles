@@ -11,3 +11,9 @@ complete -c dotfiles -f -n "__fish_seen_subcommand_from skills" \
 
 # `dotfiles stow --adopt`
 complete -c dotfiles -f -n "__fish_seen_subcommand_from stow" -l adopt -d "adopt existing files (first run on a configured machine)"
+
+# `dotfiles keys <sub>`
+complete -c dotfiles -f -n "__fish_seen_subcommand_from keys" \
+    -a "devices\t'list readable keyboards' record\t'capture this machine' diff\t'compare two machines'"
+complete -c dotfiles -f -n "__fish_seen_subcommand_from keys" -l raw -d "read evdev below the compositor (Linux)"
+complete -c dotfiles -f -n "__fish_seen_subcommand_from keys" -l no-open -d "do not launch a browser"
