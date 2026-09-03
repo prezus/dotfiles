@@ -127,9 +127,11 @@ export async function findBrokenSymlinks(root: string, maxDepth: number): Promis
  * of the stow tree, derived rather than hardcoded.
  *
  * This is the definition of "ours". `home/` contains `.pi/` because we stow
- * Pi's settings.json and themes/, so `~/.pi/agent/themes` is scanned. There is
- * no `home/.claude/`, because Claude Code gets nothing from us except one
- * skills symlink — so none of its 20-odd runtime directories are ever visited.
+ * Pi's settings.json and themes/, so `~/.pi/agent/themes` is scanned. It
+ * contains `.claude/` for one file, settings.json, so `~/.claude` itself is
+ * scanned — but only that directory, at depth 1: `home/.claude/` has no
+ * subdirectories, so none of Claude Code's 20-odd runtime directories
+ * (projects/, sessions/, plugins/, …) are ever visited.
  */
 export async function mirroredDirectories(sourceDir: string, targetDir: string): Promise<string[]> {
   const dirs: string[] = []

@@ -22,6 +22,8 @@ dotfiles/
 │   └── tui/                  #   the ONLY OpenTUI-aware code (renderer, theme, pickers)
 ├── home/                     # SHARED stow package — correct on both platforms
 │   ├── .gitconfig            #   (+ an optional include of the platform overlay)
+│   ├── .claude/settings.json #   Claude Code user settings — the ONLY file we own in ~/.claude
+│   ├── .pi/agent/            #   Pi settings.json, themes/, extension config
 │   └── .config/
 │       ├── fish/             # Fish shell (AGENTS.md) — conf.d/ + fisher plugins
 │       ├── zed/              # Editor (AGENTS.md) — LSP/formatter/theme
@@ -71,6 +73,7 @@ dotfiles/
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
+| Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Wire a new machine | `dotfiles init` |
 
 ## CONVENTIONS
@@ -131,6 +134,11 @@ the file*. **No third module branches on platform to build a path.** Importing
   it's committed — see NOTES for the command.
 - Committing skill files into this repo — they belong in `prezus/skills`.
 - Committing `~/.ssh/config`, keys, or secrets — SSH is `dotfiles ssh`-managed; keys are in 1Password.
+- Adding anything under `home/.claude/` beyond authored config (`settings.json`, and
+  later `CLAUDE.md`, `keybindings.json`, `commands/`, `agents/`, `hooks/` if they appear).
+  `.gitignore` denies the directory by default — un-ignore the new file explicitly.
+  `plugins/installed_plugins.json` carries absolute install paths and is rewritten by
+  Claude Code; the `enabledPlugins` map in `settings.json` is the intent it derives from.
 - Appending completions/inits to `config.fish` — use `conf.d/` (auto-sourced) or `completions/`.
 - Putting a JS tool in `bun-global.txt` when a brew formula exists — prefer brew.
 - Committing fisher-managed `functions/`/`completions/` — they're gitignored, restored by `fisher update`.

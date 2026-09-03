@@ -110,6 +110,17 @@ home*/.pi/agent/extensions/*
 # NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
 # the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
 
+# ─── Claude Code config ─────────────────────────────────────────────
+#     ~/.claude is Claude Code's runtime home — auth, sessions, history,
+#     projects/ (tens of MB), plugin caches. We author exactly one file there.
+#     Same shape as the Pi and Zed blocks: deny by default, un-ignore what we
+#     author. On a machine where ~/.claude does not exist yet, stow FOLDS the
+#     directory (one link to the whole package), so Claude Code then writes all
+#     of that state straight into the repo — these rules keep it out of git.
+#     The `skills` link inside it is placed by `dotfiles skills`, not by stow.
+home*/.claude/*
+!home*/.claude/settings.json
+
 # ─── Zed config ─────────────────────────────────────────────────────
 #     stow FOLDS this directory (~/.config/zed is one symlink to the whole
 #     package, not a link per file), so Zed writes its runtime state straight

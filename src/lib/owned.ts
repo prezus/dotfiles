@@ -15,9 +15,11 @@
 //
 // The asymmetry between agents falls out of this naturally. `home/.pi/` exists
 // because we genuinely stow Pi's settings.json and themes/, so Pi's config dirs
-// are ours to check. There is no `home/.claude/` — Claude Code is simply the one
-// agent that will not read the vendor-neutral ~/.agents/skills, so it gets a
-// single shim symlink and nothing else. Its runtime state is its own business.
+// are ours to check. `home/.claude/` holds exactly one file, settings.json, so
+// `~/.claude` is scanned at depth 1 and nothing below it — Claude Code's
+// runtime directories are its own business. The skills shim in `~/.claude` is
+// not stow's: Claude Code is the one agent that will not read the
+// vendor-neutral ~/.agents/skills, so `dotfiles skills` places that link.
 import { HOME, HOME_DIRS, OWNED_LINKS } from "./env.ts"
 import { findBrokenSymlinks, mirroredDirectories, pathExists, readlinkSafe } from "./fs.ts"
 

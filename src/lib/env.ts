@@ -82,9 +82,11 @@ export const PI_SKILLS_LINK = join(HOME, ".pi", "agent", "skills")
  * under those application directories belongs to the app, not to us.
  *
  * `~/.claude` is the clearest case: it has ~21 entries — auth, sessions, debug
- * logs, project state — and exactly ONE is ours. Claude Code is the only agent
- * that won't read the vendor-neutral `~/.agents/skills`, so we place a single
- * shim symlink and touch nothing else (INSTALL.md → Target state).
+ * logs, project state — and exactly TWO are ours: `settings.json`, stowed from
+ * `home/.claude/`, and this skills shim. Claude Code is the only agent that
+ * won't read the vendor-neutral `~/.agents/skills`, so the shim is placed here
+ * rather than by stow, and everything else in the directory is left alone
+ * (INSTALL.md → Target state).
  */
 export const OWNED_LINKS = [AGENTS_SKILLS_LINK, CLAUDE_SKILLS_LINK, PI_SKILLS_LINK] as const
 
