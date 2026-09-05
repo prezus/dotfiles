@@ -54,9 +54,10 @@ bytes the registry served; they do not establish that those bytes are trustworth
 `pi-subagents` is capped at eight child launches per parent session, four per run, and two
 active asynchronous runs. Nesting stops at one child level, parallel execution is limited
 to two at once, schedules are disabled, and any spawn-budget grant requires confirmation.
-Scout and researcher use Luna; reviewer uses Terra; worker uses Sol at medium thinking;
-oracle uses Sol at high thinking. `pi-web-access` supplies the researcher's explicit web
-tools.
+The main agent uses Astra at medium thinking. Scout and researcher use Luna, which also
+remains the subagent default; reviewer and worker use Astra at medium thinking; oracle
+uses Astra at high thinking. The enforced subagent model scope allows Luna and Astra.
+`pi-web-access` supplies the researcher's explicit web tools.
 
 ## Skills — consumed, not owned
 
