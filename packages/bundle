@@ -174,7 +174,7 @@ brew "cloudflare-wrangler"
 brew "yt-dlp"
 brew "ampcode/tap/ampcode", trusted: true
 
-cask "1password-cli"
+cask "1password-cli@beta"
 cask "nikitabobko/tap/aerospace"
 cask "android-platform-tools"
 cask "bambu-studio"
