@@ -12,3 +12,5 @@
 # so this is safe before the overlay is stowed.
 [include]
 	path = ~/.config/git/platform
+[gpg "ssh"]
+	allowedSignersFile = ~/.config/git/allowed_signers

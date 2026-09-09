@@ -20,7 +20,7 @@
   },
   "vim_mode": false,
   "helix_mode": false,
-  "disable_ai": true,
+  "disable_ai": false,
   "show_edit_predictions": false,
 
   // External Agent Servers (OpenCode, Claude Code, etc.)
