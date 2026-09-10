@@ -57,6 +57,8 @@ node_modules/
 *.log
 # Installer-managed binary (currently >100 MB; GitHub rejects files over 100 MB)
 home*/.local/bin/plannotator
+# Installer-managed fx coding agent; native packages are tracked in manifests.
+home*/.local/bin/fx
 
 # ─── Editors / IDEs ─────────────────────────────────────────────────
 .idea/
