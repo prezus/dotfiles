@@ -112,7 +112,7 @@ home*/.pi/agent/extensions/*
 
 # ─── Claude Code config ─────────────────────────────────────────────
 #     ~/.claude is Claude Code's runtime home — auth, sessions, history,
-#     projects/ (tens of MB), plugin caches. We author exactly one file there.
+#     projects/ (tens of MB), plugin caches. Only authored config belongs here.
 #     Same shape as the Pi and Zed blocks: deny by default, un-ignore what we
 #     author. On a machine where ~/.claude does not exist yet, stow FOLDS the
 #     directory (one link to the whole package), so Claude Code then writes all
@@ -120,6 +120,12 @@ home*/.pi/agent/extensions/*
 #     The `skills` link inside it is placed by `dotfiles skills`, not by stow.
 home*/.claude/*
 !home*/.claude/settings.json
+!home*/.claude/commands/
+home*/.claude/commands/*
+!home*/.claude/commands/zed.md
+!home*/.claude/hooks/
+home*/.claude/hooks/*
+!home*/.claude/hooks/zed.sh
 
 # ─── Zed config ─────────────────────────────────────────────────────
 #     stow FOLDS this directory (~/.config/zed is one symlink to the whole

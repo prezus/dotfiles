@@ -4,6 +4,19 @@
     "pr": "",
     "sessionUrl": false
   },
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": "^zed$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/zed.sh\"; exit 2"
+          }
+        ]
+      }
+    ]
+  },
   "model": "claude-fable-5-1[1m]",
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
