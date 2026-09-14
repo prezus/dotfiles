@@ -74,6 +74,7 @@ dotfiles/
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
+| Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
 | Wire a new machine | `dotfiles init` |
 
 ## CONVENTIONS
@@ -161,6 +162,8 @@ dotfiles stow            Re-symlink home/ → $HOME. --dry-run previews, --adopt
 dotfiles ssh             Write the 1Password-agent + legacy-compat block into ~/.ssh/config
 dotfiles bun             Install JS globals from packages/bun-global.txt
 dotfiles plannotator     Install the Plannotator CLI to ~/.local/bin
+dotfiles unquarantine    Opt-in macOS quarantine cleaner: action menu, or install | status | uninstall
+                         Not enabled by init/stow; bin/ owns the script, CLI owns its installed link.
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
 dotfiles skills          install | update | status | verify   (from prezus/skills)

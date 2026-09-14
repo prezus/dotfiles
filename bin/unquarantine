@@ -1,0 +1,272 @@
+#!/bin/bash
+# macOS 13+, including the system Bash 3.2. No package-manager runtime needed.
+set -o pipefail
+umask 077
+
+usage() {
+    cat <<'HELP'
+Usage: unquarantine [--dry-run] [--all] [--] [PATH...]
+       unquarantine --status | --help
+Sweep WATCH_DIRS, or the supplied files/directories. --all requires PATH arguments.
+Only paths strictly inside HOME are allowed, including with --all.
+Configuration: config/unquarantine.conf beside the source repository's bin/.
+Environment overrides config, including empty values. WATCH_DIRS is whitespace-
+separated absolute/~/ paths; use a Bash array in config for whitespace in names.
+HELP
+}
+error() { printf 'unquarantine: %s\n' "$*" >&2; }
+
+# Follow the installed symlink back to the repository, not ~/.local/config.
+source_path=${BASH_SOURCE[0]}
+while [ -L "$source_path" ]; do
+    source_dir=$(cd -P -- "$(dirname -- "$source_path")" && pwd) || exit 1
+    target=$(readlink "$source_path") || exit 1
+    case "$target" in /*) source_path=$target ;; *) source_path=$source_dir/$target ;; esac
+done
+repo_dir=$(cd -P -- "$(dirname -- "$source_path")/.." && pwd) || exit 1
+config_file=$repo_dir/config/unquarantine.conf
+
+# Save only variables that were actually supplied. Empty is an override too.
+settings=(EXTENSIONS WATCH_DIRS RECURSIVE MAX_DEPTH LOG_FILE DRY_RUN)
+saved_names=() saved_values=()
+for name in "${settings[@]}"; do
+    if declare -p "$name" >/dev/null 2>&1; then
+        saved_names+=("$name")
+        saved_values+=("${!name}")
+    fi
+done
+EXTENSIONS='conf cfg'
+WATCH_DIRS="$HOME/Downloads"
+RECURSIVE=false
+MAX_DEPTH=3
+LOG_FILE="$HOME/.local/state/unquarantine.log"
+DRY_RUN=false
+if [ -e "$config_file" ] || [ -L "$config_file" ]; then
+    if [ ! -f "$config_file" ] || [ ! -r "$config_file" ]; then
+        error "Unreadable config: $config_file"; exit 1
+    fi
+    /bin/bash -n "$config_file" || exit 1
+    # Authored shell config is trusted code, never eval a configuration value.
+    source "$config_file" || { error "Could not source config: $config_file"; exit 1; }
+fi
+for ((i=0; i<${#saved_names[@]}; i++)); do
+    unset "${saved_names[i]}"
+    printf -v "${saved_names[i]}" '%s' "${saved_values[i]}"
+done
+case "$RECURSIVE:$DRY_RUN" in true:true|true:false|false:true|false:false) ;; *) error 'RECURSIVE and DRY_RUN must be true or false'; exit 1 ;; esac
+case "$MAX_DEPTH" in ''|*[!0-9]*) error 'MAX_DEPTH must be a positive integer'; exit 1 ;; esac
+if [ "${#MAX_DEPTH}" -gt 6 ] || [ "$MAX_DEPTH" -eq 0 ]; then
+    error 'MAX_DEPTH must be between 1 and 999999'; exit 1
+fi
+mode=sweep
+all=false
+paths=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --help) usage; exit 0 ;;
+        --dry-run) DRY_RUN=true ;;
+        --all) all=true ;;
+        --status) mode=status ;;
+        --watch-dirs0) mode=watch-dirs ;; # Installer protocol: validated absolute paths, NUL-delimited.
+        --) shift; paths+=("$@"); break ;;
+        -*) error "Unknown option: $1"; usage >&2; exit 2 ;;
+        *) paths+=("$1") ;;
+    esac
+    shift
+done
+if { [ "$mode" != sweep ] && { [ "${#paths[@]}" -gt 0 ] || [ "$all" = true ]; }; } ||
+   { [ "$all" = true ] && [ "${#paths[@]}" -eq 0 ]; }; then
+    error 'Use --all with PATH arguments; --status takes no paths or --all'; exit 2
+fi
+if [ "$(uname -s)" != Darwin ]; then error 'macOS 13+ is required'; exit 1; fi
+home_dir=$(cd -P -- "$HOME" && printf '%s/.' "$PWD") || exit 1
+home_dir=${home_dir%/.}
+
+# Resolve existing ancestors even for a missing leaf, so a missing path through
+# an escaping directory symlink cannot bypass confinement. Result in resolved.
+resolve_path() {
+    local input=$1 parent base
+    case "$input" in '~') input=$HOME ;; '~/'*) input=$HOME/${input:2} ;; esac
+    case "$input" in /*) ;; *) input=$PWD/$input ;; esac
+    while [ "$input" != / ] && [ "${input%/}" != "$input" ]; do input=${input%/}; done
+    if [ -d "$input" ]; then
+        # A suffix protects trailing newlines from command substitution.
+        resolved=$(cd -P -- "$input" && printf '%s/.' "$PWD") || return 1
+        resolved=${resolved%/.}
+    else
+        parent=${input%/*}
+        [ -n "$parent" ] || parent=/
+        base=${input##*/}
+        [ "$parent" != "$input" ] || return 1
+        resolve_path "$parent" || return 1
+        case "$base" in
+            .) ;;
+            ..) resolved=${resolved%/*}; [ -n "$resolved" ] || resolved=/ ;;
+            *) resolved=${resolved%/}/$base ;;
+        esac
+    fi
+}
+confine() {
+    resolve_path "$1" || { error "Cannot resolve path: $1"; return 1; }
+    case "$resolved" in
+        "$home_dir"/*) [ "$home_dir" != / ] && return 0 ;;
+    esac
+    error "Refusing path outside or equal to HOME: $1 ($resolved)"
+    return 1
+}
+
+watch_dirs=()
+case "$(declare -p WATCH_DIRS)" in
+    'declare -a '*) watch_dirs=("${WATCH_DIRS[@]}") ;;
+    *)
+        # Intentional whitespace tokenization, without globbing or eval.
+        while IFS= read -r dir; do [ -z "$dir" ] || watch_dirs+=("$dir"); done < <(
+            printf '%s\n' "$WATCH_DIRS" | tr ' \t\n' '\n\n\n'
+        )
+        ;;
+esac
+roots=()
+if [ "${#paths[@]}" -gt 0 ]; then
+    for path in "${paths[@]}"; do
+        [ -n "$path" ] || { error 'PATH must not be empty'; exit 2; }
+        case "$path" in '~') path=$HOME ;; '~/'*) path=$HOME/${path:2} ;; esac
+        while [ "$path" != / ] && [ "${path%/}" != "$path" ]; do path=${path%/}; done
+        # Do not dereference directly supplied links, even when --all is used.
+        [ ! -L "$path" ] || continue
+        confine "$path" || exit 1
+        roots+=("$resolved")
+    done
+else
+    for dir in "${watch_dirs[@]}"; do
+        [ -n "$dir" ] || { error 'WATCH_DIRS contains an empty array element'; exit 1; }
+        case "$dir" in
+            /*|'~/'*|'~') ;;
+            *) error "WATCH_DIRS must use absolute paths or ~/: $dir"; exit 1 ;;
+        esac
+        confine "$dir" || exit 1
+        if [ -e "$resolved" ] && [ ! -d "$resolved" ]; then
+            error "Watch path is not a directory: $dir"; exit 1
+        fi
+        roots+=("$resolved")
+    done
+fi
+extension_predicate=()
+while IFS= read -r ext; do
+    [ -n "$ext" ] || continue
+    case "$ext" in *[!a-zA-Z0-9_-]*) error "Invalid extension: $ext"; exit 1 ;; esac
+    [ "${#extension_predicate[@]}" -eq 0 ] || extension_predicate+=(-o)
+    extension_predicate+=(-iname "*.$ext")
+done < <(printf '%s\n' "$EXTENSIONS" | tr ' \t\n' '\n\n\n')
+if [ "$all" = true ]; then extension_predicate=(-true); fi
+if [ "${#extension_predicate[@]}" -eq 0 ]; then extension_predicate=(-false); fi
+if [ "$mode" = watch-dirs ]; then
+    for dir in "${roots[@]}"; do printf '%s\0' "$dir"; done
+    exit 0
+fi
+
+state_dir=$HOME/.local/state
+state_file=$state_dir/unquarantine.status
+if [ "$mode" = status ]; then
+    printf 'Config: %s (environment overrides applied)\n' "$config_file"
+    for name in "${settings[@]}"; do declare -p "$name"; done
+    printf '\nLast sweep directory read health:\n'
+    if [ -f "$state_file" ]; then cat "$state_file"; else printf 'Unknown: no completed sweep recorded.\n'; fi
+fi
+log() {
+    local text=$1
+    error "$text"
+    if [ "$mode" = sweep ] && [ "$DRY_RUN" = false ] && [ -n "$LOG_FILE" ]; then
+        if ! mkdir -p -- "$(dirname -- "$LOG_FILE")" ||
+           ! printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$text" >> "$LOG_FILE"; then
+            error "Cannot write log: $LOG_FILE"
+            failed=true
+        fi
+    fi
+}
+# A printable escaped path keeps a newline in a filename from forging log rows.
+quoted() { printf -v quoted_path '%q' "$1"; }
+incomplete() {
+    case "$1" in
+        *.[cC][rR][dD][oO][wW][nN][lL][oO][aA][dD]|*.[dD][oO][wW][nN][lL][oO][aA][dD]|*.[pP][aA][rR][tT]|*.[pP][aA][rR][tT][iI][aA][lL]) return 0 ;;
+    esac
+    return 1
+}
+incomplete_ancestor() {
+    local path=$1
+    while [ "$path" != / ]; do
+        incomplete "$path" && return 0
+        path=${path%/*}
+        [ -n "$path" ] || break
+    done
+    return 1
+}
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/unquarantine.XXXXXX") || exit 1
+trap 'rm -rf -- "$work_dir"' EXIT
+trap 'exit 1' HUP INT TERM
+now=$(date +%s)
+count=0
+failed=false
+depth=1
+[ "$RECURSIVE" != true ] || depth=$MAX_DEPTH
+printf 'Sweep: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$work_dir/health"
+for root in "${roots[@]}"; do
+    quoted "$root"
+    if [ ! -e "$root" ]; then
+        log "Missing path (skipped): $quoted_path"
+        printf 'MISSING %s\n' "$quoted_path" >> "$work_dir/health"
+        continue
+    fi
+    # Find must finish successfully before any file from this root is changed.
+    # This catches TCC-denied directory enumeration, not merely test -r.
+    if ! find "$root" -maxdepth "$depth" \
+        \( -type d \( -iname '*.download' -o -iname '*.crdownload' -o -iname '*.part' -o -iname '*.partial' \) -prune \) -o \
+        \( -type f \( "${extension_predicate[@]}" \) -print0 \) \
+        > "$work_dir/files" 2> "$work_dir/find.err"; then
+        log "READ FAILED: $quoted_path. Check Privacy & Security > Full Disk Access for /bin/bash."
+        cat "$work_dir/find.err" >&2
+        printf 'FAILED %s\n' "$quoted_path" >> "$work_dir/health"
+        failed=true
+        continue
+    fi
+    printf 'OK %s\n' "$quoted_path" >> "$work_dir/health"
+    # NUL-delimited iteration via a file retains counters and find's exit status.
+    while IFS= read -r -d '' file; do
+        incomplete_ancestor "$file" && continue
+        [ -f "$file" ] && [ ! -L "$file" ] || continue
+        # Re-resolve ancestors immediately before touching xattrs. find never
+        # follows links; this also catches a directory replaced since discovery.
+        confine "$file" || { failed=true; continue; }
+        [ "$resolved" = "$file" ] || { log "Path changed during sweep (skipped): $file"; continue; }
+        modified=$(stat -f '%m' "$file" 2>/dev/null) || continue
+        if [ "$mode" != status ] && [ "$((now - modified))" -lt 2 ]; then continue; fi
+        xattr -p com.apple.quarantine "$file" >/dev/null 2>&1 || continue
+        count=$((count + 1))
+        quoted "$file"
+        if [ "$mode" = status ]; then continue; fi
+        if [ "$DRY_RUN" = true ]; then
+            log "Would clean: $quoted_path"
+        elif xattr -d com.apple.quarantine "$file"; then
+            log "Cleaned: $quoted_path"
+        else
+            log "FAILED to remove quarantine: $quoted_path"
+            failed=true
+        fi
+    done < "$work_dir/files"
+done
+if [ "$mode" = status ]; then
+    printf '\nCurrent directory read health:\n'
+    cat "$work_dir/health"
+    printf 'Matching quarantined files (including files younger than 2s): %s\n' "$count"
+elif [ "$DRY_RUN" = false ]; then
+    if mkdir -p -- "$state_dir"; then
+        health_temp=$(mktemp "$state_dir/.unquarantine.XXXXXX") || exit 1
+        if ! cat "$work_dir/health" > "$health_temp" || ! mv -f -- "$health_temp" "$state_file"; then
+            rm -f -- "$health_temp"
+            error "Cannot save read health: $state_file"; failed=true
+        fi
+    else
+        error "Cannot save read health: $state_file"; failed=true
+    fi
+fi
+[ "$failed" = false ] || exit 1
+exit 0

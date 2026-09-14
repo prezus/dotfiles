@@ -59,6 +59,8 @@ node_modules/
 home*/.local/bin/plannotator
 # Installer-managed fx coding agent; native packages are tracked in manifests.
 home*/.local/bin/fx
+# CLI-managed link can land here when stow has folded ~/.local/bin.
+home*/.local/bin/unquarantine
 
 # ─── Editors / IDEs ─────────────────────────────────────────────────
 .idea/

@@ -16,6 +16,9 @@ only **deploys** them.
 ```
 dotfiles              # bash shim — ensures bun exists, then runs src/cli.ts
 src/                  # the CLI (TypeScript): init / update / doctor / skills / Pi plugins / stow
+bin/unquarantine*      # standalone macOS cleaner and opt-in installer
+config/unquarantine.conf # cleaner settings
+LaunchAgents/         # launchd template; installer generates absolute paths
 home/                 # SHARED — stowed into $HOME, correct on both platforms
   .config/<tool>/     # per-tool config (fish, git, nvim, mise, …)
   .local/bin/         # personal scripts, on PATH
@@ -163,3 +166,121 @@ sync is live immediately — no reinstall.
 
 See [INSTALL.md](./INSTALL.md) for exact steps and the `dotfiles skills` spec (including how it
 must back up the existing real `~/.claude/skills` before replacing it).
+
+## Opt-in macOS quarantine cleaner
+
+`bin/unquarantine` (macOS 13+, system Bash 3.2) removes **only** the
+`com.apple.quarantine` extended attribute. It preserves other attributes, including
+Finder tags and download-origin metadata. This deliberately bypasses the associated
+macOS quarantine/Gatekeeper checks for matching downloads: an extension is **not**
+a safety assessment. Keep the default `conf cfg` allowlist narrow. No part of
+`init`, `update`, or `stow` enables the agent automatically.
+
+Edit the trusted shell configuration in [`config/unquarantine.conf`](config/unquarantine.conf):
+
+```bash
+EXTENSIONS="conf cfg"
+WATCH_DIRS="$HOME/Downloads"
+RECURSIVE=false
+MAX_DEPTH=3
+LOG_FILE="$HOME/.local/state/unquarantine.log" # empty disables logging
+DRY_RUN=false
+```
+
+Missing config uses these defaults. Environment variables override config, even
+when empty: `EXTENSIONS="yml toml" bin/unquarantine --dry-run`. Extension tokens
+are letters, digits, `_` or `-`, without a leading dot; matching is case-insensitive.
+`WATCH_DIRS` requires absolute paths or literal `~/`, which is expanded without
+`eval`. Relative watch paths are rejected so launchd's working directory cannot
+change their meaning. Scalar values are whitespace-separated.
+For directory names (or a home directory) containing whitespace, use a Bash array
+in the config, e.g. `WATCH_DIRS=("$HOME/Downloads" "$HOME/Other downloads")`.
+An exported scalar `WATCH_DIRS` overrides that entire array.
+
+```sh
+bin/unquarantine --dry-run               # preview without writing logs/state
+bin/unquarantine --status                # effective config, health, quarantine count
+bin/unquarantine "$HOME/Downloads/a.conf" # direct file or directory arguments
+bin/unquarantine --all "$HOME/Downloads/a.txt" # bypass extension filter only
+./dotfiles unquarantine                  # interactive install / status / uninstall menu
+./dotfiles unquarantine install          # explicit opt-in; generates and loads agent
+./dotfiles unquarantine status
+./dotfiles unquarantine uninstall
+```
+
+The dashboard's quarantine entry opens the same action menu. Piped/noninteractive
+use requires an explicit action.
+
+The CLI-owned worker link is `~/.local/bin/unquarantine`; it resolves back to the
+repo's `bin/` and reads the canonical repo config. The generated agent is
+`~/Library/LaunchAgents/local.unquarantine.plist`, not a stow-managed file.
+[`LaunchAgents/local.unquarantine.plist`](LaunchAgents/local.unquarantine.plist) is
+only a template: the installer XML-escapes absolute paths and validates it with
+`plutil`. Reinstallation boots out the old agent before bootstrapping its replacement.
+Uninstall removes only the owned worker link and plist, retaining config and logs.
+Unrelated files at those destinations cause a refusal instead of being overwritten.
+If the repo moves, uninstall from its old location first, then reinstall.
+
+Changes to `WATCH_DIRS` require reinstalling to regenerate `WatchPaths`. Other
+config changes apply on the next sweep. Any of the six settings exported during
+installation are also captured as agent environment overrides; reinstall without
+those exports to return to config-driven values.
+
+### Scheduling and safeguards
+
+- `WatchPaths` watches top-level changes only, **not recursive subdirectory
+  activity**. `ThrottleInterval=2` limits event churn. The approved
+  `StartInterval=60` fallback retries files skipped as too young and picks up
+  nested changes on the next periodic sweep when `RECURSIVE=true`. launchd may
+  coalesce/delay runs, so 60 seconds is not a strict completion deadline.
+- Non-recursive scans use `find -maxdepth 1`; recursive scans use `MAX_DEPTH`
+  (top-level files are depth 1). No symlinks are followed in a scan. Regular
+  files and directories ending in `.crdownload`, `.download`, `.part`, or
+  `.partial` are skipped, as are files modified less than two seconds ago.
+- Both watched directories **and explicit paths, even with `--all`**, must
+  resolve strictly inside `$HOME`. `/`, `$HOME` itself and symlink escapes are
+  refused. Direct symlinks are skipped. Missing directories warn and do not
+  fail the sweep. `--all` requires explicit paths and does not disable the
+  confinement, age, or in-progress-download safeguards.
+- NUL-delimited `find` results are saved before processing, so failed enumeration
+  cannot cause a partial cleanup of that root. Bash's NUL read loop preserves
+  spaces, newlines and quotes; logged paths are shell-escaped. Ancestors are
+  rechecked before xattr access. This is a typo/download safeguard, **not a
+  sandbox against hostile concurrent renames or hard links**.
+- Exit codes: `0` success/no work/missing directory; `1` config, confinement,
+  directory access or operational failure; `2` invalid usage.
+
+### Full Disk Access and diagnosis
+
+The job explicitly executes **`/bin/bash`**. If macOS denies Downloads access,
+open **System Settings → Privacy & Security → Full Disk Access**, add `/bin/bash`
+(use ⌘⇧G in the file chooser), and enable it. This is a **broad grant to Bash
+scripts**, not just this cleaner; only grant it if that tradeoff is acceptable.
+The installer prints this instruction and checks directory enumeration before
+loading. Terminal permission does not imply the same access from launchd.
+
+After the first minute, check `dotfiles unquarantine status`. It shows both the
+last sweep's timestamp and per-root `OK`/`FAILED`/`MISSING` read health, then a fresh
+read check and count (including matching files too young to clean). An unknown
+last run means no sweep has recorded health yet. Dry runs and status checks never
+replace the last-sweep record. Missing roots and an empty watch list are not
+successful directory reads.
+
+Read failures print an explicit FDA warning and persist `FAILED` health. Worker
+actions/warnings default to `~/.local/state/unquarantine.log`; launchd stderr goes
+to `~/.local/state/unquarantine.err`; read health is stored separately in
+`~/.local/state/unquarantine.status`, even when logging is disabled. These files
+are local runtime state, not committed. Logs are append-only; rotate/remove them
+manually if needed. Early startup/config failures appear in stderr rather than
+replacing the previous successful health record, so check its timestamp too.
+
+### Tests
+
+Run `/bin/bash tests/unquarantine.test.sh` or `bun run test`. The macOS integration
+uses real synthetic quarantine attributes inside a temporary HOME, checks the
+allowlist, quotes/newlines, download age, partial directories, symlink escapes,
+other-xattr retention and idempotency, then exercises install/reinstall/uninstall
+with a stub `launchctl`. It never changes real Downloads or loads a real agent.
+A simulated directory-access denial verifies failure visibility and read-health
+reporting. Real launchd/TCC behavior still requires the opt-in first-run check
+above. The integration skips on Linux.

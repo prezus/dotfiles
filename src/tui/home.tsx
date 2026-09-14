@@ -30,6 +30,8 @@ import { TerminalSession, type TerminalFrame, type TerminalRun } from "./termina
 import { clearRenderer, setRenderer } from "./renderer.ts"
 import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
+import { UnquarantinePicker } from "./unquarantine-picker.tsx"
+import { unquarantine } from "../commands/unquarantine.ts"
 import { ReconcilePicker, type ReconcileRow } from "./reconcile-picker.tsx"
 import { applyReconcile, collectReconcileRows } from "../commands/reconcile.ts"
 
@@ -127,7 +129,7 @@ function Home({
   // enters, destroy, resume — which reads as a flash. Worse, the second
   // renderer overwrote the global in setRenderer(), so afterwards
   // withSuspendedUI pointed at a destroyed renderer.
-  const [view, setView] = useState<"home" | "doctor" | "update" | "reconcile" | "output">("home")
+  const [view, setView] = useState<"home" | "doctor" | "update" | "unquarantine" | "reconcile" | "output">("home")
   // Gathered BEFORE the picker mounts, because computing drift shells out to
   // `brew bundle dump` and a picker cannot render rows it does not have yet.
   const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>([])
@@ -269,7 +271,7 @@ function Home({
     async (name: string) => {
       if (busy) return
       // These are themselves full-screen; render them on this renderer.
-      if (name === "doctor" || name === "update") {
+      if (name === "doctor" || name === "update" || name === "unquarantine") {
         setView(name)
         return
       }
@@ -428,6 +430,19 @@ function Home({
           void runInPane("update", () => update([`--only=${[...picked].join(",")}`]))
         }}
       />
+    )
+  }
+
+  if (view === "unquarantine") {
+    return (
+      <UnquarantinePicker onDone={(action) => {
+        setView("home")
+        if (action === null) {
+          setStatus("unquarantine cancelled")
+          return
+        }
+        void runInPane(`unquarantine ${action}`, () => unquarantine([action]))
+      }} />
     )
   }
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Managed by dotfiles unquarantine. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.unquarantine</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>@WORKER@</string></array>
+  <key>WatchPaths</key>
+  <array>
+@WATCH_PATHS@
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+@ENVIRONMENT@
+  </dict>
+  <key>ThrottleInterval</key><integer>2</integer>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardErrorPath</key><string>@ERROR_LOG@</string>
+</dict>
+</plist>

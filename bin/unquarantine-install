@@ -1,0 +1,92 @@
+#!/bin/bash
+# Invoked by `dotfiles unquarantine`; never run automatically during init/stow.
+set -o pipefail
+umask 077
+fail() { printf 'unquarantine install: %s\n' "$*" >&2; exit 1; }
+if [ "$#" -ne 1 ]; then printf 'Usage: unquarantine-install install|uninstall|status\n' >&2; exit 2; fi
+case "$1" in install|uninstall|status) action=$1 ;; *) exit 2 ;; esac
+[ "$(uname -s)" = Darwin ] || fail 'macOS 13+ is required'
+repo_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || exit 1
+worker=$repo_dir/bin/unquarantine
+binary=$HOME/.local/bin/unquarantine
+plist=$HOME/Library/LaunchAgents/local.unquarantine.plist
+state_dir=$HOME/.local/state
+service=gui/$(id -u)/local.unquarantine
+marker='<!-- Managed by dotfiles unquarantine. -->'
+if [ "$action" = status ]; then
+    launchctl print "$service" >/dev/null 2>&1 && printf 'Agent: loaded\n' || printf 'Agent: not loaded\n'
+    exec /bin/bash "$worker" --status
+fi
+# Never overwrite an unrelated file or another provider's symlink.
+if [ -e "$binary" ] || [ -L "$binary" ]; then
+    [ -L "$binary" ] && [ "$(readlink "$binary")" = "$worker" ] || fail "Refusing unowned path: $binary"
+fi
+if [ -e "$plist" ] || [ -L "$plist" ]; then
+    [ ! -L "$plist" ] && grep -Fqx "$marker" "$plist" || fail "Refusing unowned plist: $plist"
+fi
+loaded=false
+if launchctl print "$service" >/dev/null 2>&1; then
+    [ -f "$plist" ] || fail "Loaded service has no owned plist: $service"
+    loaded=true
+fi
+if [ "$action" = uninstall ]; then
+    if [ "$loaded" = true ]; then launchctl bootout "$service" || fail 'Could not boot out agent'; fi
+    [ ! -f "$plist" ] || rm -- "$plist" || exit 1
+    [ ! -L "$binary" ] || rm -- "$binary" || exit 1
+    printf 'Uninstalled agent and worker link; config, logs and read-health state retained.\n'
+    exit 0
+fi
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/unquarantine-install.XXXXXX") || exit 1
+trap 'rm -rf -- "$work_dir"' EXIT
+trap 'exit 1' HUP INT TERM
+/bin/bash "$worker" --watch-dirs0 > "$work_dir/dirs" || exit 1
+printf '%s\n' \
+    'This opt-in agent removes quarantine and bypasses the associated macOS protection for matching files.' \
+    'In System Settings > Privacy & Security > Full Disk Access, add /bin/bash if launchd cannot read Downloads.' \
+    'This is a broad grant to Bash scripts. Terminal access does not prove launchd access.' \
+    'After one minute, run dotfiles unquarantine status and check the last sweep read health.'
+# Enumerate as well as resolve: fail loudly before loading an unusable job.
+/bin/bash "$worker" --status || fail 'Directory read check failed; see Full Disk Access instructions above'
+xml_escape() {
+    escaped=$1
+    escaped=${escaped//&/\&amp;}
+    escaped=${escaped//</\&lt;}
+    escaped=${escaped//>/\&gt;}
+    escaped=${escaped//\"/\&quot;}
+    escaped=${escaped//\'/\&apos;}
+}
+watch_xml=''
+while IFS= read -r -d '' dir; do
+    xml_escape "$dir"
+    watch_xml="$watch_xml    <string>$escaped</string>
+"
+done < "$work_dir/dirs"
+environment_xml=''
+for name in EXTENSIONS WATCH_DIRS RECURSIVE MAX_DEPTH LOG_FILE DRY_RUN; do
+    if declare -p "$name" >/dev/null 2>&1; then
+        xml_escape "${!name}"
+        environment_xml="$environment_xml    <key>$name</key><string>$escaped</string>
+"
+    fi
+done
+template=$(cat "$repo_dir/LaunchAgents/local.unquarantine.plist") || exit 1
+xml_escape "$binary"
+template=${template//@WORKER@/$escaped}
+xml_escape "$state_dir/unquarantine.err"
+template=${template//@ERROR_LOG@/$escaped}
+template=${template//@WATCH_PATHS@/$watch_xml}
+template=${template//@ENVIRONMENT@/$environment_xml}
+printf '%s\n' "$template" > "$work_dir/agent.plist"
+plutil -lint "$work_dir/agent.plist" || fail 'Invalid generated plist'
+mkdir -p -- "$(dirname -- "$binary")" "$(dirname -- "$plist")" "$state_dir" || exit 1
+chmod +x "$worker" || exit 1
+if [ ! -L "$binary" ]; then ln -s "$worker" "$binary" || exit 1; fi
+if [ "$loaded" = true ]; then launchctl bootout "$service" || fail 'Could not boot out agent'; fi
+# Remove any owned old plist first: cp must not follow a link appearing there.
+# mv replaces the directory entry instead of writing through it.
+staged_plist=$(mktemp "$HOME/Library/LaunchAgents/.unquarantine.XXXXXX") || exit 1
+if ! cat "$work_dir/agent.plist" > "$staged_plist" || ! mv -f -- "$staged_plist" "$plist"; then
+    rm -f -- "$staged_plist"; exit 1
+fi
+launchctl bootstrap "gui/$(id -u)" "$plist" || fail 'bootstrap failed; plist retained for diagnosis'
+printf 'Installed local.unquarantine (WatchPaths + 60-second sweep).\n'

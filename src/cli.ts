@@ -122,6 +122,13 @@ const ALL_COMMANDS: Command[] = [
     run: async () => (await import("./commands/plannotator.ts")).plannotator(),
   },
   {
+    name: "unquarantine",
+    platforms: ["darwin"],
+    description: "install | uninstall | status for the opt-in quarantine cleaner",
+    help: "Opt-in macOS quarantine cleaner: install | uninstall | status (not part of init)",
+    run: async (args) => (await import("./commands/unquarantine.ts")).unquarantine(args),
+  },
+  {
     name: "fish",
     description: "Make fish the default login shell + install fisher plugins",
     run: async () => (await import("./commands/fish.ts")).fish(),
