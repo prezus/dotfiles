@@ -4,6 +4,7 @@
     "pr": "",
     "sessionUrl": false
   },
+  "model": "claude-fable-5-1[1m]",
   "hooks": {
     "UserPromptExpansion": [
       {
@@ -17,10 +18,17 @@
       }
     ]
   },
-  "model": "claude-fable-5-1[1m]",
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
+    }
   },
   "modelSettings": {
     "claude-fable-5-1": {
@@ -29,13 +37,5 @@
   },
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
-  "theme": "dark",
-  "extraKnownMarketplaces": {
-    "ponytail": {
-      "source": {
-        "source": "github",
-        "repo": "DietrichGebert/ponytail"
-      }
-    }
-  }
+  "theme": "dark"
 }
