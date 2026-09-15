@@ -1,3 +1,4 @@
+tap "abue-ammar/tinycast", trusted: true
 tap "ampcode/tap"
 tap "anomalyco/tap", "https://github.com/anomalyco/homebrew-tap.git", trusted: true
 tap "derailed/k9s"
@@ -229,7 +230,7 @@ cask "wireshark-app"
 cask "yaak"
 cask "zed"
 cask "ghostty"
-cask "sol"
+cask "abue-ammar/tinycast/tinycast"
 cask "vlc"
 
 
