@@ -13,7 +13,6 @@ repo `.gitignore`):
 | `agent/settings.json` | yes | provider/model/theme config |
 | `agent/themes/*.json` | yes | custom themes (e.g. `catppuccin-macchiato`) |
 | `agent/extensions/zed.ts` | yes | `/zed` command for opening the current project in Zed |
-| `agent/extensions/subagent/config.json` | yes | spawn, concurrency, recursion, and scheduling limits |
 | `agent/skills` | no — **symlink** | → `~/.agents/skills` (the [skills repo](https://github.com/prezus/skills) canonical pool) |
 | `agent/auth.json` | no — **local** | OAuth/API secrets — never commit |
 | `agent/sessions/` | no — **local** | per-machine runtime state |
@@ -48,16 +47,6 @@ dotfiles pi verify
 Pi packages execute with the user's full permissions. Review the exact published release
 and its runtime dependencies before adding a pin. Registry signatures establish which
 bytes the registry served; they do not establish that those bytes are trustworthy.
-
-### Subagents
-
-`pi-subagents` is capped at eight child launches per parent session, four per run, and two
-active asynchronous runs. Nesting stops at one child level, parallel execution is limited
-to two at once, schedules are disabled, and any spawn-budget grant requires confirmation.
-The main agent uses Astra at medium thinking. Scout and researcher use Luna, which also
-remains the subagent default; reviewer and worker use Astra at medium thinking; oracle
-uses Astra at high thinking. The enforced subagent model scope allows Luna and Astra.
-`pi-web-access` supplies the researcher's explicit web tools.
 
 ## Skills — consumed, not owned
 
