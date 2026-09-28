@@ -7,7 +7,7 @@
 idiomatic_version_file_enable_tools = ["node"]
 
 [tools]
-claude = "latest"
+claude = { version = "latest", os = ["linux"] }
 codex = "latest"
 gh = "latest"
 node = "26.7.0"
