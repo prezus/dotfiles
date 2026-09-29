@@ -10,6 +10,7 @@ idiomatic_version_file_enable_tools = ["node"]
 claude = { version = "latest", os = ["linux"] }
 codex = "latest"
 gh = "latest"
+lua = "5.1.5"
 node = "26.7.0"
 opencode = "latest"
 pi = "latest"
