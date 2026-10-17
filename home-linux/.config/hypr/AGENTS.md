@@ -10,6 +10,7 @@ requires `default.hypr.omarchy` first, then these user files — so anything her
 | `bindings.lua` | yes | mirrors the AeroSpace motion set |
 | `looknfeel.lua` | yes | gaps/borders, same on any machine |
 | `autostart.lua` | yes | same programs everywhere |
+| `dragsnap.lua` | yes | drag-to-edge snapping for floating windows; loaded by `require("hypr.dragsnap")` in the untracked `hyprland.lua` |
 | `monitors.lua` | **no** | per-machine (this box runs `scale = 1.6`) |
 | `input.lua` | **no** | per-machine keyboard/trackpad |
 

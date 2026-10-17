@@ -48,3 +48,23 @@
 --     column_width = 0.97,
 --   },
 -- })
+
+-- Floating-friendly: drag window borders to resize, like a traditional WM.
+hl.config({
+  general = {
+    resize_on_border = true,
+    extend_border_grab_area = 15,
+  },
+})
+
+-- Magnetic snapping when dragging floating windows near edges/other windows.
+hl.config({
+  general = {
+    snap = {
+      enabled = true,
+      window_gap = 15,
+      monitor_gap = 20,
+      respect_gaps = true,
+    },
+  },
+})
