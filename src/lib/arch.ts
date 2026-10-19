@@ -6,7 +6,7 @@
 import { join } from "node:path"
 import { OMARCHY_PACKAGE_LISTS, PACKAGES_DIR } from "./env.ts"
 import { probe } from "./exec.ts"
-import { IS_OMARCHY } from "./platform.ts"
+import { IS_OMARCHY, gpuVendors } from "./platform.ts"
 import type { PackageBackend } from "./pkgbackend.ts"
 import type { PackageRuntime } from "../commands/packages.ts"
 import type { StepOutcome } from "./steps.ts"
@@ -133,6 +133,21 @@ async function check(runtime: PackageRuntime): Promise<number> {
 }
 
 /**
+ * Under --noconfirm pacman takes the FIRST provider of a virtual dependency. steam and umu-launcher need
+ * `lib32-vulkan-driver`, whose first provider is lib32-nvidia-utils, so an AMD-only machine ended up with
+ * NVIDIA's userspace (scourge, 2026-10-16). Installing the 32-bit Vulkan driver for the GPUs actually
+ * present beforehand leaves pacman nothing to choose. The 64-bit drivers are in Omarchy's baseline.
+ * `--asdeps` keeps them out of the drift check, which only looks at explicitly installed packages.
+ */
+const LIB32_VULKAN = new Map([
+  ["0x1002", "lib32-vulkan-radeon"],
+  ["0x8086", "lib32-vulkan-intel"],
+])
+
+const gpuDrivers = (): string[] =>
+  [...gpuVendors()].flatMap((vendor) => LIB32_VULKAN.get(vendor) ?? [])
+
+/**
  * Names go in argv, never on stdin: needsStdin hands the child the real terminal
  * so sudo's prompt is reachable, and a piped manifest would take that away. Same
  * class of bug as the cask/sudo hang in packages.ts.
@@ -155,6 +170,14 @@ async function install(runtime: PackageRuntime): Promise<StepOutcome> {
       : null
 
   try {
+    const drivers = gpuDrivers()
+    if (gaps.pacman.length > 0 && drivers.length > 0) {
+      // Best effort: without [multilib] these do not exist, and neither does steam
+      await runtime.runInteractiveCode(
+        ["sudo", "pacman", "-S", "--needed", "--noconfirm", "--asdeps", ...drivers],
+        { needsStdin: true },
+      )
+    }
     if (gaps.pacman.length > 0) {
       printInfo(`Installing ${gaps.pacman.length} package(s) with pacman`)
       await runtime.runInteractiveCode(

@@ -23,3 +23,7 @@ pacman "omarchy"
 pacman "omarchy-keyring"
 pacman "omarchy-settings"
 pacman "omazed"
+
+# ─── Per machine, by hand ───────────────────────────────────────────
+# Twingate client (AUR): only for machines that leave the home LAN; scourge sits on it.
+aur "twingate"

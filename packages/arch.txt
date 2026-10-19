@@ -75,4 +75,7 @@ ttf-monaspace-frozen
 
 # ─── Applications ───────────────────────────────────────────────────
 steam
+# CPU governor + niceness while a game runs (`gamemoderun %command%` in Steam); lib32 for 32-bit games
+gamemode
+lib32-gamemode
 discord

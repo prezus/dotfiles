@@ -4,7 +4,7 @@
 // Sync, not async: env.ts exports consts imported at module scope by ~20 modules,
 // and `dotfiles __commands` runs on every fish tab-press (7ms — see cli.ts). A
 // top-level await in that graph would tax every tab.
-import { readFileSync } from "node:fs"
+import { readFileSync, readdirSync } from "node:fs"
 
 export type Platform = "darwin" | "linux"
 
@@ -44,3 +44,25 @@ export const DISTRO: Distro = readDistro()
 // overlay, rather than failing on Omarchy paths it doesn't have.
 export const IS_ARCH_LIKE = DISTRO === "omarchy" || DISTRO === "arch"
 export const IS_OMARCHY = DISTRO === "omarchy"
+
+/**
+ * PCI vendor IDs of the GPUs present ("0x1002" AMD, "0x8086" Intel, "0x10de" NVIDIA).
+ * A function, not a const: only the package install needs it, never the tab-press path.
+ */
+export function gpuVendors(): Set<string> {
+  const vendors = new Set<string>()
+  if (!IS_LINUX) return vendors
+  try {
+    for (const entry of readdirSync("/sys/class/drm")) {
+      if (!/^card\d+$/.test(entry)) continue
+      try {
+        vendors.add(readFileSync(`/sys/class/drm/${entry}/device/vendor`, "utf8").trim())
+      } catch {
+        // virtual cards (simpledrm) have no PCI vendor
+      }
+    }
+  } catch {
+    // no DRM at all (container, headless VM)
+  }
+  return vendors
+}
