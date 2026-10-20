@@ -58,3 +58,11 @@ o.bind("ALT + SLASH", "Toggle split direction", hl.dsp.layout("togglesplit"))
 -- code:20/21 are minus/equal, the same keys Omarchy uses for its SUPER resizes.
 o.bind("ALT + SHIFT + code:20", "Shrink window", hl.dsp.window.resize({ x = -50, y = 0, relative = true }))
 o.bind("ALT + SHIFT + code:21", "Expand window", hl.dsp.window.resize({ x = 50, y = 0, relative = true }))
+
+-- Removed Omarchy preinstalled web apps; drop their launch bindings.
+hl.unbind("SUPER + SHIFT + ALT + G") -- WhatsApp
+hl.unbind("SUPER + SHIFT + ALT + X") -- X Post
+hl.unbind("SUPER + SHIFT + CTRL + G") -- Google Messages
+hl.unbind("SUPER + SHIFT + P") -- Google Photos
+hl.unbind("SUPER + SHIFT + X") -- X
+hl.unbind("SUPER + SHIFT + Y") -- YouTube
