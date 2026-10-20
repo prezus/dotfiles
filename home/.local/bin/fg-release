@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# fg-release: publish a ForeverGuide test build to GitHub and install it into the Mac WoW client.
+#
+#   fg-release                  build main's HEAD, publish release build-<commit>, install it
+#   fg-release -n notes.md      same, with hand-written release notes (default: commit subjects)
+#   fg-release install [tag]    download a published release (default: latest) and install it
+#
+# Environment:
+#   FG_REPO    ForeverGuide checkout   (default ~/Projects/ForeverGuide)
+#   FG_ADDONS  WoW AddOns folder       (default /Applications/World of Warcraft/_classic_beta_/Interface/AddOns)
+#
+# Publishing a release makes the repo's release-cleanup workflow delete the older ones.
+# Installing replaces only AddOns/ForeverGuide; SavedVariables under WTF/ are untouched.
+set -euo pipefail
+
+REPO="${FG_REPO:-$HOME/Projects/ForeverGuide}"
+ADDONS="${FG_ADDONS:-/Applications/World of Warcraft/_classic_beta_/Interface/AddOns}"
+NAME=ForeverGuide
+
+die() { echo "fg-release: $*" >&2; exit 1; }
+
+install_zip() {
+  local zip="$1" tmp
+  [ -d "$ADDONS" ] || die "AddOns folder not found: $ADDONS (set FG_ADDONS)"
+  tmp="$(mktemp -d)"
+  unzip -q "$zip" -d "$tmp"
+  [ -f "$tmp/$NAME/$NAME.toc" ] || { rm -rf "$tmp"; die "$zip does not unpack to $NAME/$NAME.toc"; }
+  rm -rf "${ADDONS:?}/$NAME"
+  mv "$tmp/$NAME" "$ADDONS/$NAME"
+  rm -rf "$tmp"
+  echo "installed $(basename "$zip") -> $ADDONS/$NAME"
+  if pgrep -qf "World of Warcraft"; then
+    echo "WoW is running: /reload picks up changed files; restart the game if the build adds new files."
+  fi
+}
+
+cmd_install() {
+  local tag="${1:-}"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  if [ -z "$tag" ]; then
+    tag="$(cd "$REPO" && gh release view --json tagName --jq .tagName)" || die "no published release found"
+  fi
+  (cd "$REPO" && gh release download "$tag" --pattern "$NAME-*.zip" --dir "$tmp")
+  install_zip "$(ls "$tmp"/$NAME-*.zip | head -1)"
+}
+
+cmd_publish() {
+  local notes_file="$1"
+  cd "$REPO"
+  [ "$(git branch --show-current)" = main ] || die "check out main in $REPO first"
+  [ -z "$(git status --porcelain --untracked-files=no)" ] || die "$REPO has uncommitted changes"
+  git pull -q --ff-only origin main
+  git fetch -q --tags origin
+
+  local sha tag zip
+  sha="$(git rev-parse --short=7 HEAD)"
+  tag="build-$sha"
+  zip="dist/$NAME-$sha.zip"
+
+  python3 tools/test/test_package.py
+  python3 tools/package.py --test
+
+  if gh release view "$tag" >/dev/null 2>&1; then
+    echo "release $tag already exists; installing it without publishing again"
+  else
+    local prev
+    notes="$(mktemp)"
+    trap 'rm -f "$notes"' EXIT
+    if [ -n "$notes_file" ]; then
+      cat "$notes_file" >"$notes"
+    else
+      prev="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+      if [ -n "$prev" ] && git rev-parse -q --verify "refs/tags/$prev" >/dev/null; then
+        { echo "Changes since ${prev#build-}:"; echo; git log --no-merges --format='- %s' "$prev..HEAD"; } >"$notes"
+      else
+        { echo "Build $sha"; echo; git log --no-merges --format='- %s' -10; } >"$notes"
+      fi
+    fi
+    printf '\nInstall: extract the zip into `Interface/AddOns/`. If the addon says no guide is active after updating, pick yours with `/fg guides`.\n' >>"$notes"
+    gh release create "$tag" "$zip" --target "$(git rev-parse HEAD)" --title "$NAME $sha" --notes-file "$notes" --latest
+  fi
+
+  install_zip "$REPO/$zip"
+}
+
+case "${1:-}" in
+  install) shift; cmd_install "${1:-}" ;;
+  -n|--notes) [ -f "${2:-}" ] || die "notes file not found: ${2:-}"; cmd_publish "$(cd "$(dirname "$2")" && pwd)/$(basename "$2")" ;;
+  "") cmd_publish "" ;;
+  -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) die "unknown argument: $1 (see fg-release --help)" ;;
+esac
