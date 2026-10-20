@@ -144,3 +144,6 @@ home*/.config/zed/*
 # Backups the install script makes before replacing a real dir/symlink.
 *.bak
 *.bak.*
+
+# opencode server password, written by opencode; never commit
+home/.config/opencode/service.json
