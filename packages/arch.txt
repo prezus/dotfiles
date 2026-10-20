@@ -73,6 +73,13 @@ otf-monaspace-nerd
 ttf-monaspace-frozen
 #     JetBrains Mono is already in Omarchy's baseline (ttf-jetbrains-mono-nerd-basic).
 
+# ─── Desktop ────────────────────────────────────────────────────────
+# Builds and loads hyprbars (home-linux/.config/hypr/hyprbars.lua runs `hyprpm reload`);
+# split out of the hyprland package in 0.56.2-4
+hyprpm
+# Real-time priority for PipeWire's audio thread; without it VBAN to megatron can crackle under load
+rtkit
+
 # ─── Applications ───────────────────────────────────────────────────
 steam
 # CPU governor + niceness while a game runs (`gamemoderun %command%` in Steam); lib32 for 32-bit games
