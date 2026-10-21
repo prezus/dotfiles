@@ -57,6 +57,8 @@ node_modules/
 *.log
 # Installer-managed binary (currently >100 MB; GitHub rejects files over 100 MB)
 home*/.local/bin/plannotator
+# Written by Plannotator's installer through the folded ~/.plannotator link; config.json stays tracked
+home*/.plannotator/install-flags.json
 # Installer-managed fx coding agent; native packages are tracked in manifests.
 home*/.local/bin/fx
 # CLI-managed link can land here when stow has folded ~/.local/bin.
