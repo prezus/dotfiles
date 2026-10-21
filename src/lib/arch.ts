@@ -198,10 +198,25 @@ async function install(runtime: PackageRuntime): Promise<StepOutcome> {
         { needsStdin: true },
       )
     }
-    if (gaps.pacman.length > 0) {
-      printInfo(`Installing ${gaps.pacman.length} package(s) with pacman`)
+    // Declared but already present as a dependency of a distro package (bat, eza,
+    // fd, fzf on CachyOS): `-S --needed` skips those and keeps them dependencies,
+    // so they would stay "missing" for good. Marking them explicit is the install.
+    // `-Qqd` exits nonzero when any name is absent but still lists the rest.
+    const asDeps = (await probe(["pacman", "-Qqd", ...gaps.pacman])).stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== "")
+    if (asDeps.length > 0) {
+      printInfo(`Marking ${asDeps.length} package(s) installed as dependencies explicit: ${asDeps.join(", ")}`)
+      await runtime.runInteractiveCode(["sudo", "pacman", "-D", "--asexplicit", ...asDeps], {
+        needsStdin: true,
+      })
+    }
+    const toInstall = gaps.pacman.filter((name) => !asDeps.includes(name))
+    if (toInstall.length > 0) {
+      printInfo(`Installing ${toInstall.length} package(s) with pacman`)
       await runtime.runInteractiveCode(
-        ["sudo", "pacman", "-S", "--needed", "--noconfirm", ...gaps.pacman],
+        ["sudo", "pacman", "-S", "--needed", "--noconfirm", ...toInstall],
         { needsStdin: true },
       )
     }
