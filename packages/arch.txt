@@ -83,6 +83,8 @@ rtkit
 steam
 #     Battle.net and other non-Steam launchers, with its own Wine/Proton runners
 lutris
+#     Runs Proton builds outside Steam; Lutris refuses its Proton runners (dw-proton) without it
+umu-launcher
 #     In-game overlay (FPS, frame times, temperatures): `mangohud %command%`; GOverlay configures it
 mangohud
 lib32-mangohud
