@@ -81,6 +81,12 @@ rtkit
 
 # ─── Applications ───────────────────────────────────────────────────
 steam
+#     Battle.net and other non-Steam launchers, with its own Wine/Proton runners
+lutris
+#     In-game overlay (FPS, frame times, temperatures): `mangohud %command%`; GOverlay configures it
+mangohud
+lib32-mangohud
+goverlay
 # CPU governor + niceness while a game runs (`gamemoderun %command%` in Steam); lib32 for 32-bit games
 gamemode
 lib32-gamemode

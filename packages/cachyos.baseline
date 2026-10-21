@@ -1,7 +1,10 @@
 # Explicitly installed by the CachyOS installer (KDE Plasma, Limine, ext4) on scourge, 2026-10-20:
 # `pacman -Qqe` limited to what /var/log/pacman.log shows installed before the first command after
 # first boot. The baseline the drift check subtracts (src/lib/arch.ts); regenerate after a reinstall.
-# Removed since, by choice: alacritty, konsole (Ghostty is the terminal), firefox (Chrome).
+# Removed since, by choice (2026-10-20): alacritty, konsole (Ghostty is the terminal), firefox (Chrome);
+# ufw and its KDE page (no firewall); Wi-Fi, modem and VPN tools (wired only, Twingate); filesystem and
+# RAID tools other than ext4/FAT/exFAT; os-prober; vim, micro, the zsh config; glances, meld, reflector,
+# dnsmasq; the X11 amdgpu driver; Bluetooth (no adapter); kate, kdeconnect, shelly, cachyos-packageinstaller.
 accountsservice
 alsa-firmware
 alsa-plugins
@@ -13,15 +16,9 @@ base
 base-devel
 bash-completion
 bind
-bluedevil
-bluez
-bluez-hid2hci
 bluez-libs
-bluez-obex
-bluez-utils
 breeze-gtk
 btop
-btrfs-progs
 cachyos-emerald-kde-theme-git
 cachyos-fish-config
 cachyos-hello
@@ -30,10 +27,8 @@ cachyos-iridescent-kde
 cachyos-kde-settings
 cachyos-kernel-manager
 cachyos-keyring
-cachyos-micro-settings
 cachyos-mirrorlist
 cachyos-nord-kde-theme-git
-cachyos-packageinstaller
 cachyos-plymouth-bootanimation
 cachyos-plymouth-theme
 cachyos-rate-mirrors
@@ -41,7 +36,6 @@ cachyos-settings
 cachyos-v3-mirrorlist
 cachyos-v4-mirrorlist
 cachyos-wallpapers
-cachyos-zsh-config
 cachy-update
 cantarell-fonts
 char-white
@@ -52,8 +46,6 @@ device-mapper
 diffutils
 dmemcg-booster
 dmidecode
-dmraid
-dnsmasq
 dolphin
 dosfstools
 duf
@@ -62,7 +54,6 @@ efibootmgr
 efitools
 ethtool
 exfatprogs
-f2fs-tools
 fastfetch
 ffmpegthumbnailer
 ffmpegthumbs
@@ -70,7 +61,6 @@ filelight
 fsarchiver
 fwupd
 git
-glances
 gst-libav
 gst-plugin-pipewire
 gst-plugins-bad
@@ -82,11 +72,7 @@ hdparm
 hwdetect
 hwinfo
 inetutils
-iwd
-jfsutils
-kate
 kcalc
-kdeconnect
 kdegraphics-thumbnailers
 kde-gtk-config
 kdeplasma-addons
@@ -113,31 +99,23 @@ linux-firmware
 logrotate
 lsb-release
 lsscsi
-lvm2
 man-db
 man-pages
 mdadm
-meld
 mesa
 mesa-utils
-micro
 mkinitcpio
 modemmanager
 mtools
 nano
-nano-syntax-highlighting
-netctl
 networkmanager
-networkmanager-openvpn
 nfs-utils
-nilfs-utils
 noto-fonts
 noto-fonts-cjk
 noto-fonts-emoji
 nss-mdns
 opencl-mesa
 openssh
-os-prober
 pacman-contrib
 partitionmanager
 pavucontrol
@@ -148,7 +126,6 @@ pipewire-pulse
 pkgfile
 plasma-browser-integration
 plasma-desktop
-plasma-firewall
 plasma-foreground-booster
 plasma-login-manager
 plasma-nm
@@ -167,11 +144,9 @@ python-defusedxml
 python-packaging
 realtime-privileges
 rebuild-detector
-reflector
 ripgrep
 rsync
 sg3_utils
-shelly
 smartmontools
 s-nail
 sof-firmware
@@ -185,14 +160,10 @@ ttf-dejavu
 ttf-liberation
 ttf-meslo-nerd
 ttf-opensans
-ufw
-ufw-extras
 unrar
 unzip
 upower
-usb_modeswitch
 usbutils
-vim
 vlc-plugins-all
 vulkan-radeon
 wget
@@ -201,7 +172,4 @@ wireplumber
 wpa_supplicant
 xdg-user-dirs
 xdg-utils
-xf86-video-amdgpu
-xfsprogs
-xl2tpd
 xsettingsd
