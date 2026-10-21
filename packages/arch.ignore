@@ -27,3 +27,12 @@ pacman "omazed"
 # ─── Per machine, by hand ───────────────────────────────────────────
 # Twingate client (AUR): only for machines that leave the home LAN; scourge sits on it.
 aur "twingate"
+
+# ─── Owned by decepticon.io infra/scourge (system level, its Ansible installs them) ───
+pacman "lact"
+pacman "amdgpu_top"
+pacman "prometheus-node-exporter"
+pacman "sunshine"
+
+# ─── Installed by `dotfiles pacman` itself (bootstrap), not declared ─
+aur "yay-bin"

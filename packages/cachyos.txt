@@ -32,10 +32,6 @@ luarocks
 #     mise manages Node and other runtimes (home/.config/mise); usage gives it completions
 mise
 usage
-#     The daemon and the docker group are system level: decepticon.io infra/scourge
-docker
-docker-buildx
-docker-compose
 
 # ─── Fonts ──────────────────────────────────────────────────────────
 #     Omarchy has ttf-jetbrains-mono-nerd-basic
