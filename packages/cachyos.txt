@@ -2,6 +2,14 @@
 # CachyOS installer does not (packages/cachyos.baseline), or only as a dependency of
 # its own packages, which can go away. On macOS these come from packages/bundle.
 
+# ─── Games ──────────────────────────────────────────────────────────
+#     CachyOS's own gaming stack, the two packages CachyOS Hello's "Install gaming
+#     packages" installs: the runtime (umu-launcher, proton-cachyos, wine-cachyos,
+#     winetricks, protontricks, 32-bit libraries) and the apps (Steam, Lutris,
+#     Heroic, gamescope, MangoHud, GOverlay). Don't hand-pick from them here.
+cachyos-gaming-meta
+cachyos-gaming-applications
+
 # ─── Shell & CLI ────────────────────────────────────────────────────
 starship
 zoxide

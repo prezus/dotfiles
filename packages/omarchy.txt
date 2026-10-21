@@ -7,3 +7,14 @@
 # Builds and loads hyprbars (home-omarchy/.config/hypr/hyprbars.lua runs `hyprpm reload`);
 # split out of the hyprland package in 0.56.2-4
 hyprpm
+
+# Games. CachyOS gets these from its own gaming meta-packages (cachyos.txt) instead.
+steam
+#     Battle.net and other non-Steam launchers, with its own Wine/Proton runners
+lutris
+#     Runs Proton builds outside Steam; Lutris refuses its Proton runners (dw-proton) without it
+umu-launcher
+#     In-game overlay (FPS, frame times, temperatures): `mangohud %command%`; GOverlay configures it
+mangohud
+lib32-mangohud
+goverlay
