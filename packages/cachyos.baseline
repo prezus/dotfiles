@@ -1,8 +1,8 @@
 # Explicitly installed by the CachyOS installer (KDE Plasma, Limine, ext4) on scourge, 2026-10-20:
 # `pacman -Qqe` limited to what /var/log/pacman.log shows installed before the first command after
 # first boot. The baseline the drift check subtracts (src/lib/arch.ts); regenerate after a reinstall.
+# Removed since, by choice: alacritty, konsole (Ghostty is the terminal), firefox (Chrome).
 accountsservice
-alacritty
 alsa-firmware
 alsa-plugins
 alsa-utils
@@ -67,7 +67,6 @@ fastfetch
 ffmpegthumbnailer
 ffmpegthumbs
 filelight
-firefox
 fsarchiver
 fwupd
 git
@@ -94,7 +93,6 @@ kdeplasma-addons
 kdialog
 kinfocenter
 kio-admin
-konsole
 kscreen
 kwalletmanager
 kwallet-pam
