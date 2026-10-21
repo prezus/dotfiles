@@ -4,7 +4,7 @@
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { IS_DARWIN } from "./platform.ts"
+import { IS_CACHYOS, IS_DARWIN, IS_OMARCHY } from "./platform.ts"
 
 export const HOME = homedir()
 
@@ -27,11 +27,20 @@ export const HOME_DIR = join(DOTFILES_DIR, "home")
 /** A path lives in exactly one of home/ or the overlay — AGENTS.md PLATFORMS. */
 export const OVERLAY_DIR = join(DOTFILES_DIR, IS_DARWIN ? "home-darwin" : "home-linux")
 
-// Overlay first is load-bearing for GNU Stow. It must unfold links from the old
-// single-package layout before a restow can merge shared and platform files.
-export const STOW_PACKAGES = [IS_DARWIN ? "home-darwin" : "home-linux", "home"] as const
+/** Linux only: what differs between distros, layered over home-linux (Omarchy's Hyprland
+ *  and fish port; CachyOS's fish and ghostty entry points). Plain Arch gets none. */
+const DISTRO_OVERLAY = IS_OMARCHY ? "home-omarchy" : IS_CACHYOS ? "home-cachyos" : null
 
-export const HOME_DIRS = [HOME_DIR, OVERLAY_DIR] as const
+// Overlays first is load-bearing for GNU Stow. They must unfold links from the old
+// single-package layout before a restow can merge shared and platform files.
+export const STOW_PACKAGES: readonly string[] = IS_DARWIN
+  ? ["home-darwin", "home"]
+  : [...(DISTRO_OVERLAY ? [DISTRO_OVERLAY] : []), "home-linux", "home"]
+
+export const HOME_DIRS: readonly string[] = [
+  HOME_DIR,
+  ...STOW_PACKAGES.filter((p) => p !== "home").map((p) => join(DOTFILES_DIR, p)),
+]
 
 /** Mirrors omarchy's env-bootstrap precedence so `omarchy dev link` still works. */
 export const OMARCHY_PATH = process.env.OMARCHY_PATH ?? "/usr/share/omarchy"
@@ -41,6 +50,17 @@ export const OMARCHY_PACKAGE_LISTS = [
   join(OMARCHY_PATH, "install", "omarchy-base.packages"),
   join(OMARCHY_PATH, "install", "omarchy-other.packages"),
 ] as const
+
+/** What the CachyOS installer explicitly installed (it keeps no such list on disk). */
+export const CACHYOS_BASELINE = join(PACKAGES_DIR, "cachyos.baseline")
+
+const DISTRO_ID = IS_CACHYOS ? "cachyos" : IS_OMARCHY ? "omarchy" : null
+
+/** Packages one distro needs on top of arch.txt / aur.txt: tools Omarchy brings and CachyOS
+ *  does not, what Omarchy's Hyprland config needs, and packages that are in Omarchy's repo
+ *  but AUR-only elsewhere (1password). Null on plain Arch. */
+export const DISTRO_MANIFEST = DISTRO_ID ? join(PACKAGES_DIR, `${DISTRO_ID}.txt`) : null
+export const DISTRO_AUR_MANIFEST = DISTRO_ID ? join(PACKAGES_DIR, `${DISTRO_ID}-aur.txt`) : null
 
 export const LEGACY_SCRIPT = join(DOTFILES_DIR, "legacy", "dotfiles.bash")
 

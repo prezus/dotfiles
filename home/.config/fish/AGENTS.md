@@ -97,11 +97,13 @@ conf.d/ is merged from both stow packages, loaded alphabetically:
 
 | File | Package | Role |
 |---|---|---|
-| `00-omarchy.fish` | home-linux | port of omarchy's `default/bash/{env-bootstrap,envs}` — EDITOR, BROWSER, MANPAGER |
+| `00-cachyos.fish` | home-cachyos | sources CachyOS's `cachyos-config.fish` (greeting, `done`, MANPAGER, eza aliases), then EDITOR=nvim |
+| `00-omarchy.fish` | home-omarchy | port of omarchy's `default/bash/{env-bootstrap,envs}` — EDITOR, BROWSER, MANPAGER |
 | `10-darwin.fish` | home-darwin | EDITOR=zed, JAVA_HOME, ghostty TERM |
 | `env.fish` | home | only what is identical on both |
 | `zy-mise.fish` | home | **must be the last PATH mutation** — see below |
-| `zy-omarchy-aliases.fish` | home-linux | omarchy's portable aliases, minus the ones that collide with `zz-aliases.fish` |
+| `zy-linux-aliases.fish` | home-linux | ff, eff, mup, h on every distro, minus the ones that collide with `zz-aliases.fish` |
+| `zy-omarchy-aliases.fish` | home-omarchy | Omarchy's own launchers (`a` = omarchy-agent) |
 
 **Why `zy-mise.fish` and not `60-mise.fish`:** `fish_add_path` writes the *universal*
 `fish_user_paths`, which fish prepends wholesale on each reconstruction — so any

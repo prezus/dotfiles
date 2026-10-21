@@ -5,7 +5,7 @@ makes our **AI Agent Skills** discoverable by every coding agent we use (Claude 
 Codex, Cursor, OpenCode, Pi). Modeled on the `dotfiles` + [GNU Stow](https://www.gnu.org/software/stow/)
 pattern.
 
-Runs on **macOS** and on **Omarchy / Arch Linux**. One shared config tree plus a small
+Runs on **macOS** and on **Arch Linux**: Omarchy, or CachyOS with KDE Plasma (scourge). One shared config tree plus a small
 per-OS overlay; see [PLATFORMS](./AGENTS.md#platforms) for the rule about which is which.
 
 The skills themselves live in [prezus/skills](https://github.com/prezus/skills); this repo
@@ -23,11 +23,15 @@ home/                 # SHARED — stowed into $HOME, correct on both platforms
   .config/<tool>/     # per-tool config (fish, git, nvim, mise, …)
   .local/bin/         # personal scripts, on PATH
 home-darwin/          # macOS-only overlay (zsh, aerospace, ghostty)
-home-linux/           # Linux-only overlay (hypr, omarchy, ghostty personal.conf)
+home-linux/           # Linux-only overlay, every distro (ghostty personal.conf, PipeWire VBAN)
+home-omarchy/         # Omarchy only (hypr, omarchy, its fish port)
+home-cachyos/         # CachyOS only (sources its fish config, ghostty entry point)
 packages/
   bundle              # Brewfile snapshot — macOS
   bundle.ignore       # installed on purpose, never tracked (drift-check excludes)
-  arch.txt / aur.txt  # pacman / yay manifests — Linux
+  arch.txt / aur.txt  # pacman / yay manifests — Linux, every distro
+  omarchy.txt cachyos.txt cachyos-aur.txt  # per distro on top
+  cachyos.baseline    # what the CachyOS installer brought (drift-check baseline)
   arch.ignore         # same role as bundle.ignore, for pacman
   bun-global.txt      # JS-only global CLIs with no native package
   rust.txt            # rustup toolchains / components / targets
@@ -62,7 +66,7 @@ git remote set-url origin git@github.com:prezus/dotfiles.git
 git -C ~/Projects/skills remote set-url origin git@github.com:prezus/skills.git
 ```
 
-### Omarchy / Arch Linux
+### Arch Linux (Omarchy, CachyOS)
 
 `init` step 1 installs `base-devel`, `git`, `stow` and `yay` — nothing else does, and the
 stow step needs them. Install the 1Password app and enable its SSH agent (Settings →
@@ -74,6 +78,10 @@ cd ~/Projects/dotfiles
 ./dotfiles init                        # pacman/yay → rust → bun → … → stow → … → omarchy includes
 ./dotfiles stow --adopt                # on a machine Omarchy has already configured
 ```
+
+On CachyOS (scourge), decepticon.io's `infra/scourge` clones this repo and does the first
+`stow --adopt` (`just scourge bootstrap`); CachyOS's own fish config stays in effect
+(`home-cachyos/.config/fish/conf.d/00-cachyos.fish` sources it before ours).
 
 Two Omarchy-specific things worth knowing:
 

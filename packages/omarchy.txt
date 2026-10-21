@@ -1,0 +1,9 @@
+# Omarchy only, on top of arch.txt (pacman).
+
+# In Omarchy's repo; AUR-only on other distros (cachyos-aur.txt)
+1password
+1password-cli
+
+# Builds and loads hyprbars (home-omarchy/.config/hypr/hyprbars.lua runs `hyprpm reload`);
+# split out of the hyprland package in 0.56.2-4
+hyprpm

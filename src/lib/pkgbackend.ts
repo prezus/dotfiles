@@ -25,7 +25,7 @@ export type PackageBackend = {
    * This is the one place brew and pacman genuinely differ in kind. Homebrew
    * cannot see macOS's base system, so `brew bundle dump` is already "only what
    * I added" — baseline is empty. pacman manages EVERYTHING including the
-   * kernel, and Omarchy ships 206 curated packages on top, so without
+   * kernel, and Omarchy (~206) or CachyOS (~200) ships curated packages on top, so without
    * subtracting that, "installed but not declared" means "the operating system".
    */
   baseline: () => Promise<Set<string>>

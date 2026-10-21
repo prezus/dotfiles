@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from "node:fs"
 
 export type Platform = "darwin" | "linux"
 
-export type Distro = "macos" | "omarchy" | "arch" | "other"
+export type Distro = "macos" | "omarchy" | "cachyos" | "arch" | "other"
 
 export const PLATFORM: Platform = process.platform === "darwin" ? "darwin" : "linux"
 export const IS_DARWIN = PLATFORM === "darwin"
@@ -29,6 +29,7 @@ function readDistro(): Distro {
     const text = readFileSync("/etc/os-release", "utf8")
     const id = osReleaseField(text, "ID")
     if (id === "omarchy") return "omarchy"
+    if (id === "cachyos") return "cachyos"
     const like = osReleaseField(text, "ID_LIKE")?.split(/\s+/) ?? []
     if (id === "arch" || like.includes("arch")) return "arch"
     return "other"
@@ -40,10 +41,11 @@ function readDistro(): Distro {
 
 export const DISTRO: Distro = readDistro()
 
-// Kept separate so a plain Arch box gets pacman/yay/fish but skips the Hyprland
-// overlay, rather than failing on Omarchy paths it doesn't have.
-export const IS_ARCH_LIKE = DISTRO === "omarchy" || DISTRO === "arch"
+// Kept separate so a plain Arch box gets pacman/yay/fish but skips the distro
+// overlays (home-omarchy, home-cachyos), rather than failing on paths it doesn't have.
+export const IS_ARCH_LIKE = DISTRO === "omarchy" || DISTRO === "cachyos" || DISTRO === "arch"
 export const IS_OMARCHY = DISTRO === "omarchy"
+export const IS_CACHYOS = DISTRO === "cachyos"
 
 /**
  * PCI vendor IDs of the GPUs present ("0x1002" AMD, "0x8086" Intel, "0x10de" NVIDIA).

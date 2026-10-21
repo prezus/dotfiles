@@ -1,0 +1,4 @@
+# Ghostty's config on CachyOS, where nothing else ships one. The settings themselves are
+# home-linux's personal.conf, shared with Omarchy (whose own config includes it through
+# `dotfiles omarchy-includes`). A relative path resolves next to this file.
+config-file = personal.conf

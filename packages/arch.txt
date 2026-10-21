@@ -1,4 +1,5 @@
-# Arch/Omarchy package manifest — the pacman half of packages/bundle.
+# Arch package manifest, every distro — the pacman half of packages/bundle.
+# Per distro on top of it: omarchy.txt, cachyos.txt (+ cachyos-aur.txt).
 #
 # ONLY what we add ON TOP of the OS. This is deliberately short: Omarchy already
 # ships ~206 packages including the whole dev toolchain (bat, eza, fd, fzf,
@@ -11,8 +12,9 @@
 # Before adding a line, check it is not already provided:
 #   grep -x '<pkg>' /usr/share/omarchy/install/*.packages
 #
-# On plain Arch (no Omarchy) the baseline falls back to the base/base-devel
-# groups, so this file legitimately needs to be longer there.
+# On CachyOS the baseline is packages/cachyos.baseline (the installer's packages),
+# and cachyos.txt adds the tools Omarchy would have brought. On plain Arch the
+# baseline falls back to the base/base-devel groups, so it needs more there.
 
 # ─── Shell & terminal ───────────────────────────────────────────────
 fish
@@ -55,8 +57,8 @@ golangci-lint
 stow
 
 # ─── Security ───────────────────────────────────────────────────────
-1password
-1password-cli
+#     1password + 1password-cli: Omarchy's repo has them (omarchy.txt), elsewhere
+#     they are AUR-only (cachyos-aur.txt)
 
 # ─── Fonts ──────────────────────────────────────────────────────────
 #     home-linux/.config/ghostty/personal.conf names Monaspace Neon/Xenon/Radon
@@ -74,9 +76,6 @@ ttf-monaspace-frozen
 #     JetBrains Mono is already in Omarchy's baseline (ttf-jetbrains-mono-nerd-basic).
 
 # ─── Desktop ────────────────────────────────────────────────────────
-# Builds and loads hyprbars (home-linux/.config/hypr/hyprbars.lua runs `hyprpm reload`);
-# split out of the hyprland package in 0.56.2-4
-hyprpm
 # Real-time priority for PipeWire's audio thread; without it VBAN to megatron can crackle under load
 rtkit
 

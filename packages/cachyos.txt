@@ -1,0 +1,34 @@
+# CachyOS only, on top of arch.txt (pacman): what Omarchy's baseline brings and the
+# CachyOS installer does not (packages/cachyos.baseline), or only as a dependency of
+# its own packages, which can go away. On macOS these come from packages/bundle.
+
+# ─── Shell & CLI ────────────────────────────────────────────────────
+starship
+zoxide
+tmux
+bat
+eza
+fd
+fzf
+lazygit
+gum
+whois
+inotify-tools
+wl-clipboard
+
+# ─── Development ────────────────────────────────────────────────────
+neovim
+#     nvim plugins build parsers and rocks with these
+tree-sitter-cli
+luarocks
+#     mise manages Node and other runtimes (home/.config/mise); usage gives it completions
+mise
+usage
+#     The daemon and the docker group are system level: decepticon.io infra/scourge
+docker
+docker-buildx
+docker-compose
+
+# ─── Fonts ──────────────────────────────────────────────────────────
+#     Omarchy has ttf-jetbrains-mono-nerd-basic
+ttf-jetbrains-mono-nerd

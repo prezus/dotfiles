@@ -48,4 +48,4 @@ link resolves (`readlink -f bindings.lua`) before believing the error.
 
 `omarchy refresh hyprland` / `omarchy refresh config hypr/bindings.lua` — it overwrites
 the file with the package default, writing *through* the stow symlink into the repo.
-Recover with `git -C ~/Projects/dotfiles checkout -- home-linux/.config/hypr/`.
+Recover with `git -C ~/Projects/dotfiles checkout -- home-omarchy/.config/hypr/`.

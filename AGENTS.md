@@ -1,6 +1,6 @@
 # DOTFILES
 
-macOS **and** Omarchy/Arch Linux dev environment via GNU Stow + a `dotfiles` CLI.
+macOS **and** Arch Linux (Omarchy, or CachyOS with KDE Plasma) dev environment via GNU Stow + a `dotfiles` CLI.
 Shell: fish on both (zsh is macOS-only legacy). Packages via Homebrew on macOS,
 pacman/yay on Linux. Skills live in a **separate repo**
 ([prezus/skills](https://github.com/prezus/skills)) and are symlinked in.
@@ -33,8 +33,12 @@ dotfiles/
 ├── home-darwin/              # macOS-only overlay
 │   ├── .zshrc .zprofile .zshenv .profile
 │   └── .config/{aerospace,ghostty,git,fish}/
-├── home-linux/               # Linux-only overlay
-│   └── .config/{hypr,omarchy,ghostty,git,fish}/
+├── home-linux/               # Linux-only overlay, every distro
+│   └── .config/{ghostty,git,fish,pipewire}/
+├── home-omarchy/             # Omarchy only, over home-linux
+│   └── .config/{hypr,omarchy,fish}/
+├── home-cachyos/             # CachyOS only, over home-linux
+│   └── .config/{fish,ghostty}/
 ├── packages/
 │   ├── bundle                # Brewfile (brew/cask/tap/go/cargo) — macOS
 │   ├── bundle.ignore         # installed-but-intentionally-untracked (drift-check excludes)
@@ -69,8 +73,9 @@ dotfiles/
 | SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Tiling WM (macOS) | `home-darwin/.config/aerospace/aerospace.toml` |
-| Tiling WM (Linux) | `home-linux/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
+| Tiling WM (Omarchy) | `home-omarchy/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
+| Something that differs per Linux distro | `home-omarchy/` or `home-cachyos/`; packages in `packages/omarchy.txt`, `cachyos.txt`, `cachyos-aur.txt` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
@@ -101,12 +106,22 @@ dotfiles/
 the file*. **No third module branches on platform to build a path.** Importing
 `IS_DARWIN` to pick a command to spawn is fine; importing it to join a path is not.
 
-- **Own the override, not the default.** A file enters the repo only if Omarchy
+- **Linux distros: one overlay each, over home-linux.** `env.ts` stows
+  `home-omarchy` or `home-cachyos` (by `/etc/os-release` ID) before `home-linux`
+  and `home`; plain Arch gets neither. Same for packages: `arch.txt`/`aur.txt` for
+  all, plus `<distro>.txt` / `<distro>-aur.txt`. The baseline the drift check
+  subtracts is Omarchy's install manifests, or `packages/cachyos.baseline` (what
+  the CachyOS installer put on scourge; regenerate after a reinstall).
+- **CachyOS: follow its defaults.** KDE settings are not tracked here, and
+  CachyOS's fish setup is sourced first (`home-cachyos/.config/fish/conf.d/00-cachyos.fish`)
+  so ours layers on top. Ghostty: nothing ships a config there, so
+  `home-cachyos/.config/ghostty/config` just includes home-linux's `personal.conf`.
+- **Omarchy: own the override, not the default.** A file enters the repo only if Omarchy
   ships it as an empty user-override stub (`hypr/*.lua`, `omarchy/shell.json`) or
   does not ship it at all. Files Omarchy ships as working defaults *with an
   include mechanism* (`ghostty/config`, `foot/foot.ini`) stay unowned — `dotfiles
   omarchy-includes` appends one managed include line instead.
-- **`omarchy refresh config <path>` overwrites the file with the package
+- **Omarchy: `omarchy refresh config <path>` overwrites the file with the package
   default**, and `cp -f` follows a stow symlink, so it writes THROUGH the link
   into the repo. The symlink survives; the change shows up in `git diff` and
   `git checkout --` undoes it. That is why the policy is detection, not
@@ -126,7 +141,7 @@ the file*. **No third module branches on platform to build a path.** Importing
 - Editing `~/.config/*` or `~/.zshrc` directly — changes are lost / diverge from the repo until stowed.
 - Running `omarchy refresh config <tracked path>` — it reverts the repo copy. To
   adopt a new upstream default, diff `/usr/share/omarchy/config/<path>` by hand.
-- Putting a `theme =` line in `home-linux/.config/ghostty/personal.conf` — it is
+- Putting a `theme =` line in `home-linux/.config/ghostty/personal.conf` — on Omarchy it is
   included after omarchy's theme include and would override it, making
   `omarchy theme set` appear to do nothing.
 - **NEVER commit a `vscode "…"` line to `packages/bundle`** — extensions come from VS Code

@@ -4,9 +4,15 @@
 // already has. The `pacman "x"` / `aur "x"` directive shape exists only at this
 // boundary, so reconcile.ts and doctor keep working unchanged.
 import { join } from "node:path"
-import { OMARCHY_PACKAGE_LISTS, PACKAGES_DIR } from "./env.ts"
+import {
+  CACHYOS_BASELINE,
+  DISTRO_AUR_MANIFEST,
+  DISTRO_MANIFEST,
+  OMARCHY_PACKAGE_LISTS,
+  PACKAGES_DIR,
+} from "./env.ts"
 import { probe } from "./exec.ts"
-import { IS_OMARCHY, gpuVendors } from "./platform.ts"
+import { IS_CACHYOS, IS_OMARCHY, gpuVendors } from "./platform.ts"
 import type { PackageBackend } from "./pkgbackend.ts"
 import type { PackageRuntime } from "../commands/packages.ts"
 import type { StepOutcome } from "./steps.ts"
@@ -15,6 +21,9 @@ import { printError, printInfo, printSuccess, printWarning } from "./ui.ts"
 export const ARCH_MANIFEST = join(PACKAGES_DIR, "arch.txt")
 export const AUR_MANIFEST = join(PACKAGES_DIR, "aur.txt")
 export const ARCH_IGNORE = join(PACKAGES_DIR, "arch.ignore")
+/** This machine's manifests: the shared pair plus its distro's (omarchy.txt, cachyos-aur.txt, …). */
+const NATIVE_MANIFESTS = [ARCH_MANIFEST, ...(DISTRO_MANIFEST ? [DISTRO_MANIFEST] : [])]
+const AUR_MANIFESTS = [AUR_MANIFEST, ...(DISTRO_AUR_MANIFEST ? [DISTRO_AUR_MANIFEST] : [])]
 
 const DIRECTIVE = /^(pacman|aur) "([^"]+)"$/
 
@@ -37,11 +46,11 @@ const readNames = async (path: string, kind: "pacman" | "aur"): Promise<Set<stri
 }
 
 async function declared(): Promise<Set<string>> {
-  const [native, foreign] = await Promise.all([
-    readNames(ARCH_MANIFEST, "pacman"),
-    readNames(AUR_MANIFEST, "aur"),
+  const lists = await Promise.all([
+    ...NATIVE_MANIFESTS.map((m) => readNames(m, "pacman")),
+    ...AUR_MANIFESTS.map((m) => readNames(m, "aur")),
   ])
-  return new Set([...native, ...foreign])
+  return new Set(lists.flatMap((l) => [...l]))
 }
 
 /**
@@ -51,6 +60,11 @@ async function declared(): Promise<Set<string>> {
  * machine has all 206 before we touch it. Reading them rather than keeping a
  * hand-written denylist means an `omarchy update` that adds a package does not
  * suddenly show up as our drift.
+ *
+ * On CachyOS it is packages/cachyos.baseline: what the installer explicitly
+ * installed (KDE, kernels, CachyOS's settings), taken from a fresh install's
+ * pacman.log before anything of ours ran. CachyOS keeps no such list on disk;
+ * updates add dependencies, not explicit packages, so it changes with a reinstall.
  *
  * On plain Arch there is no such record, so fall back to the `base` and
  * `base-devel` groups — narrower, so arch.txt legitimately carries more there.
@@ -64,6 +78,11 @@ async function baseline(): Promise<Set<string>> {
       if (!(await file.exists())) continue
       for (const entry of parseNameList(await file.text(), "pacman")) names.add(entry)
     }
+    if (names.size > 0) return names
+  }
+
+  if (IS_CACHYOS) {
+    for (const entry of await readNames(CACHYOS_BASELINE, "pacman")) names.add(entry)
     if (names.size > 0) return names
   }
 
@@ -136,7 +155,8 @@ async function check(runtime: PackageRuntime): Promise<number> {
  * Under --noconfirm pacman takes the FIRST provider of a virtual dependency. steam and umu-launcher need
  * `lib32-vulkan-driver`, whose first provider is lib32-nvidia-utils, so an AMD-only machine ended up with
  * NVIDIA's userspace (scourge, 2026-10-16). Installing the 32-bit Vulkan driver for the GPUs actually
- * present beforehand leaves pacman nothing to choose. The 64-bit drivers are in Omarchy's baseline.
+ * present beforehand leaves pacman nothing to choose. The 64-bit drivers are in Omarchy's baseline
+ * (CachyOS: installed by chwd).
  * `--asdeps` keeps them out of the drift check, which only looks at explicitly installed packages.
  */
 const LIB32_VULKAN = new Map([
@@ -231,7 +251,7 @@ async function undeclare(lines: readonly string[]): Promise<void> {
   const drop = new Set(
     lines.map((l) => splitDirective(l)?.name).filter((n): n is string => n !== undefined),
   )
-  for (const manifest of [ARCH_MANIFEST, AUR_MANIFEST]) {
+  for (const manifest of [...NATIVE_MANIFESTS, ...AUR_MANIFESTS]) {
     const file = Bun.file(manifest)
     if (!(await file.exists())) continue
     const kept = (await file.text())
@@ -245,7 +265,7 @@ async function undeclare(lines: readonly string[]): Promise<void> {
 export const archBackend: PackageBackend = {
   id: "arch",
   label: "pacman",
-  manifests: [ARCH_MANIFEST, AUR_MANIFEST],
+  manifests: [...NATIVE_MANIFESTS, ...AUR_MANIFESTS],
   ignoreFile: ARCH_IGNORE,
   declared,
   installed,

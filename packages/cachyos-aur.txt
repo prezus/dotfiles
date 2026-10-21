@@ -1,0 +1,5 @@
+# CachyOS only, on top of aur.txt: packages Omarchy's repo carries that are AUR-only here.
+1password
+1password-cli
+# Terminal multiplexer for coding agents (brew "herdr" on macOS); -bin skips a Rust build
+herdr-bin
