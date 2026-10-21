@@ -209,6 +209,8 @@ cask "iina"
 cask "linear"
 cask "mockoon"
 cask "mongodb-compass"
+# Streams scourge (Sunshine) to this Mac; pairing and settings: decepticon.io infra/scourge/AGENTS.md
+cask "moonlight"
 cask "notion"
 cask "obs"
 cask "obsidian"
