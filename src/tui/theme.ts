@@ -1,22 +1,22 @@
-// Gruvbox dark (medium) — the same palette the shell uses, so the TUI doesn't
-// look foreign inside a Ghostty session themed by conf.d/gruvbox_theme.fish.
+// Catppuccin Macchiato — the palette the terminal (Ghostty/Rex), starship and
+// fish use, so the TUI doesn't look foreign inside them.
 export const theme = {
-  bg: "#282828",
-  bgSoft: "#3c3836",
-  bgHard: "#504945",
-  dim: "#665c54",
-  gray: "#928374",
+  bg: "#24273a",
+  bgSoft: "#363a4f",
+  bgHard: "#494d64",
+  dim: "#5b6078",
+  gray: "#8087a2",
 
-  fg: "#fbf1c7",
-  fgMuted: "#a89984",
+  fg: "#cad3f5",
+  fgMuted: "#a5adcb",
 
-  red: "#fb4934",
-  green: "#b8bb26",
-  yellow: "#fabd2f",
-  blue: "#83a598",
-  purple: "#d3869b",
-  aqua: "#8ec07c",
-  orange: "#fe8019",
+  red: "#ed8796",
+  green: "#a6da95",
+  yellow: "#eed49f",
+  blue: "#8aadf4",
+  purple: "#c6a0f6",
+  aqua: "#8bd5ca",
+  orange: "#f5a97f",
 } as const
 
 /** OpenTUI text attribute bitmask — 1 is bold. */

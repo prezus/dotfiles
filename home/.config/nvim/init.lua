@@ -1,7 +1,8 @@
 require("config.lazy")
 
 require("catppuccin").setup({
-flavour = "mocha",
+flavour = "auto", -- follows vim.o.background, which Neovim reads from the terminal
+background = { light = "latte", dark = "macchiato" },
 show_end_of_buffer = true,
 default_integrations = true,
 styles = {

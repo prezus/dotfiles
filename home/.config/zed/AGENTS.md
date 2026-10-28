@@ -1,7 +1,7 @@
 # ZED CONFIG
 
 Editor config: `settings.json` (behavior/LSP/theme) + `keymap.json` (keybindings).
-Theme Catppuccin Mocha, Monaspace fonts, AI panel on but **inline predictions off**.
+Theme Catppuccin (Macchiato dark, Latte light, following the system), Monaspace fonts, AI panel on but **inline predictions off**.
 
 > **Agents:** most changes are in `settings.json`. Preserve the security and
 > privacy settings below — don't regress them.
@@ -13,7 +13,7 @@ Theme Catppuccin Mocha, Monaspace fonts, AI panel on but **inline predictions of
 | Add/adjust a language's LSP or formatter | `languages.<Lang>` (`language_servers`, `formatter`) |
 | Tune an LSP server | `lsp.<server>.settings` / `initialization_options` |
 | Map file glob → language | `file_types.<Lang>` (e.g. Ansible, OpenTofu) |
-| Theme / icons | `theme`, `icon_theme` (Catppuccin Mocha) |
+| Theme / icons | `theme`, `icon_theme` (Catppuccin Macchiato / Latte by system mode) |
 | Fonts | `ui_font_family` / `buffer_font_family` (Monaspace Xenon/Neon) |
 | AI / agent panel | `agent`, `agent_servers` (opencode registered), `disable_ai` |
 | Exclude files from AI edit-prediction | `edit_predictions.disabled_globs` |
@@ -28,7 +28,7 @@ Theme Catppuccin Mocha, Monaspace fonts, AI panel on but **inline predictions of
 - **Rust:** `rust-analyzer` with `clippy` check + inlay hints.
 - **AI on, inline predictions OFF** — `show_edit_predictions: false`,
   `edit_prediction_provider: none`, and disabled in comments.
-- **Theme:** Catppuccin Mocha dark, italic comments; relative line numbers; minimap off.
+- **Theme:** Catppuccin Macchiato dark / Latte light, italic comments; relative line numbers; minimap off.
 
 ## ANTI-PATTERNS / DO-NOT-REGRESS
 

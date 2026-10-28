@@ -55,7 +55,11 @@
   },
 
   // Theme & Icons
-  "icon_theme": "Catppuccin Mocha",
+  "icon_theme": {
+    "mode": "system",
+    "light": "Catppuccin Latte",
+    "dark": "Catppuccin Macchiato",
+  },
   "restore_on_startup": "none",
 
   // Privacy & Telemetry
@@ -133,7 +137,11 @@
   },
   "ui_font_family": "Monaspace Xenon",
   "buffer_font_family": "Monaspace Neon",
-  "theme": "Catppuccin Mocha",
+  "theme": {
+    "mode": "system",
+    "light": "Catppuccin Latte",
+    "dark": "Catppuccin Macchiato",
+  },
 
   "experimental.theme_overrides": {
     "syntax": {

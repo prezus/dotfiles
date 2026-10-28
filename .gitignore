@@ -93,7 +93,6 @@ home*/.config/fish/conf.d/git.fish
 # (docker/kubectl/orb/orbctl) stay ignored — `dotfiles fish` regenerates them,
 # `dotfiles doctor` verifies them.
 !home*/.config/fish/completions/dotfiles.fish
-!home*/.config/fish/functions/theme_gruvbox.fish
 !home*/.config/fish/functions/open.fish
 # fish's universal variable store — holds this machine's resolved fish_user_paths.
 home*/.config/fish/fish_variables
