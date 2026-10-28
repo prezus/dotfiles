@@ -11,7 +11,12 @@ import { confirm, isInteractive, printError, printInfo, printRaw, printSuccess, 
 
 const DEFAULT_SETTINGS_PATH = join(HOME_DIR, ".pi", "agent", "settings.json")
 const DEFAULT_NPM_DIR = join(HOME, ".pi", "agent", "npm")
+/** Where Pi clones `git:` packages: `<gitDir>/<host>/<owner>/<repo>`. */
+const DEFAULT_GIT_DIR = join(HOME, ".pi", "agent", "git")
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+/** A git ref Pi treats as pinned: a full commit SHA or a release tag. A branch is not. */
+const PINNED_GIT_REF = /^(?:[0-9a-f]{40}|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/
+const RELEASE_TAG = /^v?\d+\.\d+\.\d+$/
 
 /** One npm-hosted Pi package declared in the tracked settings. */
 export type PiPlugin = {
@@ -23,6 +28,24 @@ export type PiPlugin = {
 /** A declared Pi package and the version currently present on disk. */
 export type PiPluginStatus = PiPlugin & {
   readonly installedVersion: string | undefined
+}
+
+/**
+ * One git-hosted Pi package declared in the tracked settings. Pi clones and
+ * checks these out itself, so this side only pins, checks, and asks Pi to
+ * reconcile; it never touches the clone.
+ */
+export type PiGitPackage = {
+  readonly source: string
+  /** `host/owner/repo`, which is also the clone's path under the git dir. */
+  readonly repo: string
+  readonly ref: string | undefined
+}
+
+/** A declared git package, the commit its ref names, and the commit checked out. */
+export type PiGitPackageStatus = PiGitPackage & {
+  readonly pinnedCommit: string | undefined
+  readonly installedCommit: string | undefined
 }
 
 /** Expected failure while reading or parsing the tracked Pi settings. */
@@ -52,6 +75,7 @@ const RegistryVersionJson = Schema.parseJson(Schema.String)
 type ParsedSettings = {
   readonly rawText: string
   readonly plugins: readonly PiPlugin[]
+  readonly gitPackages: readonly PiGitPackage[]
 }
 
 type PiResult<T> =
@@ -83,6 +107,7 @@ const defaultRuntime: PiPluginRuntime = {
 export type PiPluginOptions = {
   readonly settingsPath?: string
   readonly npmDir?: string
+  readonly gitDir?: string
   readonly runtime?: PiPluginRuntime
 }
 
@@ -100,6 +125,18 @@ export function parseNpmPackageSource(source: string): PiPlugin | undefined {
   return { source, name, version }
 }
 
+/** Parse a `git:host/owner/repo[@ref]` Pi package source. */
+export function parseGitPackageSource(source: string): PiGitPackage | undefined {
+  if (!source.startsWith("git:")) return undefined
+  const spec = source.slice("git:".length)
+  const separator = spec.lastIndexOf("@")
+  const hasRef = separator > spec.lastIndexOf("/")
+  const repo = hasRef ? spec.slice(0, separator) : spec
+  const ref = hasRef ? spec.slice(separator + 1) : undefined
+  if (repo.split("/").filter(Boolean).length !== 3 || ref === "") return undefined
+  return { source, repo, ref }
+}
+
 function parseSettings(text: string): PiResult<ParsedSettings> {
   const decoded = Schema.decodeUnknownEither(PiSettingsJson)(text)
   if (Either.isLeft(decoded)) {
@@ -108,17 +145,24 @@ function parseSettings(text: string): PiResult<ParsedSettings> {
 
   const settings = decoded.right
   const plugins: PiPlugin[] = []
+  const gitPackages: PiGitPackage[] = []
   for (const entry of settings.packages) {
     const plugin = parseNpmPackageSource(entry)
-    if (!plugin) {
-      return {
-        _tag: "err",
-        error: new PiSettingsError(`dotfiles pi currently supports npm packages only: ${entry}`),
-      }
+    if (plugin) {
+      plugins.push(plugin)
+      continue
     }
-    plugins.push(plugin)
+    const gitPackage = parseGitPackageSource(entry)
+    if (gitPackage) {
+      gitPackages.push(gitPackage)
+      continue
+    }
+    return {
+      _tag: "err",
+      error: new PiSettingsError(`dotfiles pi supports npm: and git:host/owner/repo packages only: ${entry}`),
+    }
   }
-  return { _tag: "ok", value: { rawText: text, plugins } }
+  return { _tag: "ok", value: { rawText: text, plugins, gitPackages } }
 }
 
 async function loadSettings(path: string, runtime: PiPluginRuntime): Promise<PiResult<ParsedSettings>> {
@@ -160,9 +204,58 @@ export async function readPiPluginStatuses(
   return { _tag: "ok", value: statuses }
 }
 
+async function commitOf(clone: string, rev: string, runtime: PiPluginRuntime): Promise<string | undefined> {
+  const result = await runtime.probe(["git", "-C", clone, "rev-parse", "--verify", "--quiet", `${rev}^{commit}`])
+  const commit = result.stdout.trim()
+  return result.ok && commit !== "" ? commit : undefined
+}
+
+/**
+ * Read declared git packages and pair them with Pi's checkout. The pinned
+ * commit is resolved inside the clone, so a tag Pi has not fetched yet reads
+ * as off-pin rather than reaching for the network.
+ */
+export async function readPiGitPackageStatuses(
+  options: PiPluginOptions = {},
+): Promise<PiResult<readonly PiGitPackageStatus[]>> {
+  const runtime = options.runtime ?? defaultRuntime
+  const settings = await loadSettings(options.settingsPath ?? DEFAULT_SETTINGS_PATH, runtime)
+  if (settings._tag === "err") return settings
+  const gitDir = options.gitDir ?? DEFAULT_GIT_DIR
+  const statuses = await Promise.all(
+    settings.value.gitPackages.map(async (pkg) => {
+      const clone = join(gitDir, pkg.repo)
+      return {
+        ...pkg,
+        pinnedCommit: pkg.ref ? await commitOf(clone, pkg.ref, runtime) : undefined,
+        installedCommit: await commitOf(clone, "HEAD", runtime),
+      }
+    }),
+  )
+  return { _tag: "ok", value: statuses }
+}
+
 function exactPinError(plugin: PiPlugin): string | undefined {
   if (!plugin.version || !EXACT_VERSION.test(plugin.version)) {
     return `${plugin.name} is not pinned to an exact version (${plugin.source})`
+  }
+  return undefined
+}
+
+function gitPinError(pkg: PiGitPackage): string | undefined {
+  if (!pkg.ref || !PINNED_GIT_REF.test(pkg.ref)) {
+    return `${pkg.repo} is not pinned to a release tag or full commit (${pkg.source})`
+  }
+  return undefined
+}
+
+/** Every reason a git package is not checked out at its pin, or undefined. */
+function gitDriftError(status: PiGitPackageStatus): string | undefined {
+  const pinProblem = gitPinError(status)
+  if (pinProblem) return pinProblem
+  if (!status.installedCommit) return `${status.repo}@${status.ref} is not installed`
+  if (status.installedCommit !== status.pinnedCommit) {
+    return `${status.repo}: declared ${status.ref}, checked out ${status.installedCommit.slice(0, 10)}`
   }
   return undefined
 }
@@ -171,6 +264,12 @@ async function verify(options: PiPluginOptions): Promise<number> {
   const statuses = await readPiPluginStatuses(options)
   if (statuses._tag === "err") {
     printError(statuses.error.message)
+    return 1
+  }
+
+  const gitStatuses = await readPiGitPackageStatuses(options)
+  if (gitStatuses._tag === "err") {
+    printError(gitStatuses.error.message)
     return 1
   }
 
@@ -183,12 +282,17 @@ async function verify(options: PiPluginOptions): Promise<number> {
       problems.push(`${status.name}: declared ${status.version}, installed ${status.installedVersion}`)
     }
   }
+  for (const status of gitStatuses.value) {
+    const problem = gitDriftError(status)
+    if (problem) problems.push(problem)
+  }
 
   if (problems.length > 0) {
     for (const problem of problems) printWarning(problem)
     return 1
   }
-  printSuccess(`${statuses.value.length} Pi plugin(s) installed at their exact pins`)
+  const total = statuses.value.length + gitStatuses.value.length
+  printSuccess(`${total} Pi plugin(s) installed at their exact pins`)
   return 0
 }
 
@@ -198,17 +302,28 @@ async function status(options: PiPluginOptions): Promise<number> {
     printError(statuses.error.message)
     return 1
   }
+  const gitStatuses = await readPiGitPackageStatuses(options)
+  if (gitStatuses._tag === "err") {
+    printError(gitStatuses.error.message)
+    return 1
+  }
   for (const plugin of statuses.value) {
     const declared = plugin.version ?? "floating"
     const installed = plugin.installedVersion ?? "missing"
     const marker = plugin.version === plugin.installedVersion ? "✓" : "!"
     printRaw(`  ${marker} ${plugin.name}  declared ${declared} · installed ${installed}`)
   }
-  return statuses.value.every(
+  for (const pkg of gitStatuses.value) {
+    const declared = pkg.ref ?? "floating"
+    const installed = pkg.installedCommit?.slice(0, 10) ?? "missing"
+    const marker = gitDriftError(pkg) === undefined ? "✓" : "!"
+    printRaw(`  ${marker} ${pkg.repo}  declared ${declared} · checked out ${installed}`)
+  }
+  const npmOk = statuses.value.every(
     (plugin) => exactPinError(plugin) === undefined && plugin.version === plugin.installedVersion,
   )
-    ? 0
-    : 1
+  const gitOk = gitStatuses.value.every((pkg) => gitDriftError(pkg) === undefined)
+  return npmOk && gitOk ? 0 : 1
 }
 
 function pinnedSpecs(plugins: readonly PiPlugin[]): string[] | undefined {
@@ -232,20 +347,48 @@ async function install(options: PiPluginOptions): Promise<number> {
     printError("Every Pi npm package must have an exact version before installation")
     return 1
   }
-  if (!(await runtime.commandExists("bun"))) {
-    printError("Bun is required to install Pi plugins")
+  const unpinnedGit = settings.value.gitPackages.map(gitPinError).filter((e) => e !== undefined)
+  if (unpinnedGit.length > 0) {
+    for (const problem of unpinnedGit) printError(problem)
     return 1
   }
 
-  const npmDir = options.npmDir ?? DEFAULT_NPM_DIR
-  await runtime.mkdir(npmDir)
-  printInfo(`Installing ${specs.length} pinned Pi plugin(s) with Bun`)
-  const code = await runtime.runInteractiveCode(["bun", "add", "--exact", ...specs], { cwd: npmDir })
-  if (code !== 0) {
-    printError("Pi plugin installation failed")
-    return code
+  if (specs.length > 0) {
+    if (!(await runtime.commandExists("bun"))) {
+      printError("Bun is required to install Pi plugins")
+      return 1
+    }
+    const npmDir = options.npmDir ?? DEFAULT_NPM_DIR
+    await runtime.mkdir(npmDir)
+    printInfo(`Installing ${specs.length} pinned Pi plugin(s) with Bun`)
+    const code = await runtime.runInteractiveCode(["bun", "add", "--exact", ...specs], { cwd: npmDir })
+    if (code !== 0) {
+      printError("Pi plugin installation failed")
+      return code
+    }
   }
+
+  const code = await reconcileGitPackages(settings.value.gitPackages, runtime)
+  if (code !== 0) return code
   return await verify(options)
+}
+
+/** Ask Pi to clone or check out each git package at the ref the settings name. */
+async function reconcileGitPackages(packages: readonly PiGitPackage[], runtime: PiPluginRuntime): Promise<number> {
+  if (packages.length === 0) return 0
+  if (!(await runtime.commandExists("pi"))) {
+    printError("Pi is required to install git Pi packages")
+    return 1
+  }
+  for (const pkg of packages) {
+    printInfo(`Reconciling ${pkg.repo} at ${pkg.ref} with Pi`)
+    const code = await runtime.runInteractiveCode(["pi", "update", "--extension", pkg.source])
+    if (code !== 0) {
+      printError(`Pi could not install ${pkg.source}`)
+      return code
+    }
+  }
+  return 0
 }
 
 async function latestVersion(name: string, runtime: PiPluginRuntime): Promise<string | undefined> {
@@ -255,25 +398,45 @@ async function latestVersion(name: string, runtime: PiPluginRuntime): Promise<st
   return Either.isRight(decoded) && EXACT_VERSION.test(decoded.right) ? decoded.right : undefined
 }
 
-function settingsWithVersions(
-  settings: ParsedSettings,
-  versions: ReadonlyMap<string, string>,
-): PiResult<string> {
+/** The newest `vX.Y.Z` release tag upstream, or undefined when it cannot be read. */
+async function latestReleaseTag(repo: string, runtime: PiPluginRuntime): Promise<string | undefined> {
+  const result = await runtime.probe(["git", "ls-remote", "--tags", "--refs", `https://${repo}`])
+  if (!result.ok) return undefined
+  const tags = result.stdout
+    .split("\n")
+    .map((line) => line.split("refs/tags/")[1]?.trim() ?? "")
+    .filter((tag) => RELEASE_TAG.test(tag))
+  const parts = (tag: string) => tag.replace(/^v/, "").split(".").map(Number)
+  tags.sort((a, b) => {
+    const [x, y] = [parts(a), parts(b)]
+    return (x[0]! - y[0]!) || (x[1]! - y[1]!) || (x[2]! - y[2]!)
+  })
+  return tags.at(-1)
+}
+
+/** Replace whole package sources in the settings text, keeping its formatting. */
+function settingsWithSources(settings: ParsedSettings, replacements: ReadonlyMap<string, string>): PiResult<string> {
   let text = settings.rawText
-  for (const plugin of settings.plugins) {
-    const version = versions.get(plugin.name)
-    if (!version) continue
-    const needle = JSON.stringify(plugin.source)
+  for (const [from, to] of replacements) {
+    const needle = JSON.stringify(from)
     const occurrences = text.split(needle).length - 1
     if (occurrences !== 1) {
       return {
         _tag: "err",
-        error: new PiSettingsError(`Expected one declaration for ${plugin.name}, found ${occurrences}`),
+        error: new PiSettingsError(`Expected one declaration for ${from}, found ${occurrences}`),
       }
     }
-    text = text.replace(needle, JSON.stringify(`npm:${plugin.name}@${version}`))
+    text = text.replace(needle, JSON.stringify(to))
   }
   return { _tag: "ok", value: text.endsWith("\n") ? text : `${text}\n` }
+}
+
+type UpdateCandidate = {
+  readonly label: string
+  readonly from: string
+  readonly to: string
+  readonly source: string
+  readonly nextSource: string
 }
 
 async function update(argv: readonly string[], options: PiPluginOptions): Promise<number> {
@@ -285,14 +448,28 @@ async function update(argv: readonly string[], options: PiPluginOptions): Promis
     return 1
   }
 
-  const available: Array<{ plugin: PiPlugin; latest: string }> = []
+  const available: UpdateCandidate[] = []
   for (const plugin of settings.value.plugins) {
     const latest = await latestVersion(plugin.name, runtime)
     if (!latest) {
       printWarning(`Could not look up ${plugin.name}`)
       continue
     }
-    if (latest !== plugin.version) available.push({ plugin, latest })
+    if (latest !== plugin.version) {
+      const nextSource = `npm:${plugin.name}@${latest}`
+      available.push({ label: plugin.name, from: plugin.version ?? "floating", to: latest, source: plugin.source, nextSource })
+    }
+  }
+  for (const pkg of settings.value.gitPackages) {
+    const latest = await latestReleaseTag(pkg.repo, runtime)
+    if (!latest) {
+      printWarning(`Could not look up release tags for ${pkg.repo}`)
+      continue
+    }
+    if (latest !== pkg.ref) {
+      const from = pkg.ref && /^[0-9a-f]{40}$/.test(pkg.ref) ? pkg.ref.slice(0, 10) : (pkg.ref ?? "floating")
+      available.push({ label: pkg.repo, from, to: latest, source: pkg.source, nextSource: `git:${pkg.repo}@${latest}` })
+    }
   }
   if (available.length === 0) {
     printSuccess("Pi plugins are up to date")
@@ -302,12 +479,12 @@ async function update(argv: readonly string[], options: PiPluginOptions): Promis
   const updateAll = argv.includes("--all")
   const selected = new Map<string, string>()
   for (const candidate of available) {
-    const change = `${candidate.plugin.name}: ${candidate.plugin.version ?? "floating"} → ${candidate.latest}`
+    const change = `${candidate.label}: ${candidate.from} → ${candidate.to}`
     if (updateAll) {
       printInfo(change)
-      selected.set(candidate.plugin.name, candidate.latest)
+      selected.set(candidate.source, candidate.nextSource)
     } else if (isInteractive() && (await confirm(`Update ${change}?`, false))) {
-      selected.set(candidate.plugin.name, candidate.latest)
+      selected.set(candidate.source, candidate.nextSource)
     } else {
       printInfo(`${change} (not selected)`)
     }
@@ -317,27 +494,31 @@ async function update(argv: readonly string[], options: PiPluginOptions): Promis
     return 0
   }
 
-  const nextSettings = settingsWithVersions(settings.value, selected)
+  const nextSettings = settingsWithSources(settings.value, selected)
   if (nextSettings._tag === "err") {
     printError(nextSettings.error.message)
     return 1
   }
-  const nextPackages = settings.value.plugins.map((plugin) => {
-    const version = selected.get(plugin.name) ?? plugin.version
-    return { ...plugin, version, source: version ? `npm:${plugin.name}@${version}` : plugin.source }
-  })
-  const specs = pinnedSpecs(nextPackages)
-  if (!specs) {
-    printError("Every Pi npm package must have an exact version before updating")
+  const next = parseSettings(nextSettings.value)
+  if (next._tag === "err") {
+    printError(next.error.message)
     return 1
   }
 
-  const npmDir = options.npmDir ?? DEFAULT_NPM_DIR
-  await runtime.mkdir(npmDir)
-  const code = await runtime.runInteractiveCode(["bun", "add", "--exact", ...specs], { cwd: npmDir })
-  if (code !== 0) {
-    printError("Pi plugin update failed; tracked pins were not changed")
-    return code
+  // npm packages install BEFORE the pins move, so a failed install changes nothing.
+  if (settings.value.plugins.some((plugin) => selected.has(plugin.source))) {
+    const specs = pinnedSpecs(next.value.plugins)
+    if (!specs) {
+      printError("Every Pi npm package must have an exact version before updating")
+      return 1
+    }
+    const npmDir = options.npmDir ?? DEFAULT_NPM_DIR
+    await runtime.mkdir(npmDir)
+    const code = await runtime.runInteractiveCode(["bun", "add", "--exact", ...specs], { cwd: npmDir })
+    if (code !== 0) {
+      printError("Pi plugin update failed; tracked pins were not changed")
+      return code
+    }
   }
 
   try {
@@ -346,6 +527,17 @@ async function update(argv: readonly string[], options: PiPluginOptions): Promis
     printError(`Plugins installed, but the tracked settings could not be updated: ${String(cause)}`)
     return 1
   }
+
+  // Pi reconciles git packages from the settings file, so these pins have to
+  // move first; a failure puts the original file back.
+  const movedGit = next.value.gitPackages.filter((pkg) => [...selected.values()].includes(pkg.source))
+  const gitCode = await reconcileGitPackages(movedGit, runtime)
+  if (gitCode !== 0) {
+    await runtime.writeFile(settingsPath, settings.value.rawText)
+    printError("Git package update failed; tracked pins were restored (run `dotfiles pi install` to realign)")
+    return gitCode
+  }
+
   printSuccess(`Updated ${selected.size} Pi plugin pin(s)`)
   return 0
 }

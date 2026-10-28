@@ -15,7 +15,7 @@ import { Result } from "better-result"
 import { Schema } from "effect"
 import { systemLoginShell } from "../fish.ts"
 import { goBinDir } from "../langtools.ts"
-import { readPiPluginStatuses } from "../pi.ts"
+import { readPiGitPackageStatuses, readPiPluginStatuses } from "../pi.ts"
 import { readdir } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 import {
@@ -252,19 +252,25 @@ const agentChecks: Check[] = AGENT_TOOLS.map(({ bin, label, formula }) => ({
     // machine-local. Compare declarations to package metadata instead of
     // counting `pi list` lines, which prints a source and path for each entry.
     if (bin === "pi") {
-      const plugins = await readPiPluginStatuses()
+      const [plugins, gitPackages] = await Promise.all([readPiPluginStatuses(), readPiGitPackageStatuses()])
       if (plugins._tag === "err") {
         return { status: "warn", message: `${label} — ${plugins.error.message}` }
       }
-      const drifted = plugins.value.filter(
-        (plugin) => plugin.version === undefined || plugin.version !== plugin.installedVersion,
-      )
+      if (gitPackages._tag === "err") {
+        return { status: "warn", message: `${label} — ${gitPackages.error.message}` }
+      }
+      const drifted =
+        plugins.value.filter((plugin) => plugin.version === undefined || plugin.version !== plugin.installedVersion)
+          .length +
+        gitPackages.value.filter((pkg) => pkg.pinnedCommit === undefined || pkg.pinnedCommit !== pkg.installedCommit)
+          .length
+      const total = plugins.value.length + gitPackages.value.length
       return {
-        status: drifted.length === 0 ? "ok" : "warn",
+        status: drifted === 0 ? "ok" : "warn",
         message:
-          drifted.length === 0
-            ? `${label} — ${version || "installed"} · ${plugins.value.length} plugin(s) (${path})`
-            : `${label} — ${drifted.length} plugin(s) missing or off-pin (dotfiles pi install)`,
+          drifted === 0
+            ? `${label} — ${version || "installed"} · ${total} plugin(s) (${path})`
+            : `${label} — ${drifted} plugin(s) missing or off-pin (dotfiles pi install)`,
       }
     }
     return { status: "ok", message: `${label} — ${version || "installed"} (${path})` }

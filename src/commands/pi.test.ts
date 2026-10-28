@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { probe } from "../lib/exec.ts"
 import { parseNpmPackageSource, piPlugins, type PiPluginRuntime } from "./pi.ts"
 
 const writePackage = async (npmDir: string, name: string, version: string): Promise<void> => {
@@ -15,8 +16,10 @@ const runtimeFor = (
   run: PiPluginRuntime["runInteractiveCode"],
   latest: Readonly<Record<string, string>> = {},
 ): PiPluginRuntime => ({
-  commandExists: async (bin) => bin === "bun",
+  commandExists: async (bin) => bin === "bun" || bin === "pi",
   probe: async (command) => {
+    // Git checks run for real against the temp clone; only the npm registry is faked.
+    if (command[0] === "git") return await probe(command)
     const name = command[3] ?? ""
     const version = latest[name]
     return version
@@ -66,6 +69,44 @@ describe("Pi plugin manifest", () => {
     expect(attempted).toEqual([
       ["bun", "add", "--exact", "pi-stop@1.3.0", "@scope/tool@2.0.0"],
     ])
+  })
+
+  // Regression: one git: entry in settings used to reject the whole file, so every
+  // `dotfiles pi` subcommand failed and the npm plugins went unchecked too.
+  it("installs npm and git packages from one manifest and holds git packages to a pin", async () => {
+    const root = await mkdtemp(join(tmpdir(), "dotfiles-pi-git-"))
+    const settingsPath = join(root, "settings.json")
+    const npmDir = join(root, "npm")
+    const gitDir = join(root, "git")
+    const clone = join(gitDir, "github.com", "owner", "tool")
+    await mkdir(clone, { recursive: true })
+    const git = (...args: string[]) => probe(["git", "-C", clone, ...args])
+    await git("init", "-q")
+    await writeFile(join(clone, "index.ts"), "export {}\n")
+    await git("add", ".")
+    await git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+    const sha = (await git("rev-parse", "HEAD")).stdout.trim()
+
+    await writeFile(
+      settingsPath,
+      JSON.stringify({ packages: ["npm:pi-stop@1.3.0", `git:github.com/owner/tool@${sha}`] }),
+    )
+    const attempted: string[][] = []
+    const runtime = runtimeFor(npmDir, async (command) => {
+      attempted.push(command)
+      await writePackage(npmDir, "pi-stop", "1.3.0")
+      return 0
+    })
+
+    expect(await piPlugins(["install"], { settingsPath, npmDir, gitDir, runtime })).toBe(0)
+    expect(attempted).toEqual([
+      ["bun", "add", "--exact", "pi-stop@1.3.0"],
+      ["pi", "update", "--extension", `git:github.com/owner/tool@${sha}`],
+    ])
+    expect(await piPlugins(["verify"], { settingsPath, npmDir, gitDir, runtime })).toBe(0)
+
+    await writeFile(settingsPath, JSON.stringify({ packages: ["git:github.com/owner/tool"] }))
+    expect(await piPlugins(["install"], { settingsPath, npmDir, gitDir, runtime })).toBe(1)
   })
 
   it("changes tracked pins only after the selected package set installs", async () => {
