@@ -78,7 +78,7 @@ dotfiles/
 | Tiling WM (Omarchy) | `home-omarchy/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
 | Something that differs per Linux distro | `home-omarchy/` or `home-cachyos/`; packages in `packages/omarchy.txt`, `cachyos.txt`, `cachyos-aur.txt` |
-| A skill | edit in **`~/Projects/skills`** (separate repo); `dotfiles skills update` to sync vendored |
+| A skill | edit in **`~/Projects/skills`** (separate repo); vendored syncs happen there too (its `VENDORING.md`) |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
@@ -167,7 +167,7 @@ the file*. **No third module branches on platform to build a path.** Importing
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
 dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills
-dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins / skills
+dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
                          warning in place); plain lines when piped or --plain.
@@ -183,7 +183,7 @@ dotfiles unquarantine    Opt-in macOS quarantine cleaner: action menu, or instal
                          Not enabled by init/stow; bin/ owns the script, CLI owns its installed link.
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
-dotfiles skills          install | update | status | verify   (from prezus/skills)
+dotfiles skills          install | status   (links from prezus/skills; syncing lives in that repo)
 dotfiles pi              install | update | status | verify   (exact pins in Pi settings)
 dotfiles check-packages / retry-failed / edit
 ```

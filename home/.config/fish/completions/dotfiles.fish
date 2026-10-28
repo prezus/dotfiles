@@ -7,7 +7,7 @@ complete -c dotfiles -f -n __fish_use_subcommand -a "(dotfiles __commands)"
 
 # `dotfiles skills <sub>`
 complete -c dotfiles -f -n "__fish_seen_subcommand_from skills" \
-    -a "install\t'wire skills symlinks' update\t're-sync vendored skills' status\t'show links + pinned commit'"
+    -a "install\t'wire skills symlinks' status\t'show links + pinned commit'"
 
 # `dotfiles stow --adopt`
 complete -c dotfiles -f -n "__fish_seen_subcommand_from stow" -l adopt -d "adopt existing files (first run on a configured machine)"

@@ -1,9 +1,11 @@
 // `dotfiles skills` — install FROM the separate prezus/skills repo.
 //
 // INSTALL.md is the SPEC for this file, with numbered acceptance criteria.
-// Two behaviours there are load-bearing and must not drift:
+// One behaviour there is load-bearing and must not drift:
 //   - install never silently deletes: a real dir is backed up to .bak.<ts>
-//   - update NEVER auto-commits; it stops for human review of the diff
+// Syncing vendored skills is NOT here: it is an authoring task in the skills
+// repo itself (its VENDORING.md). Other machines get a committed sync from the
+// `dotfiles update` → Repos pull.
 import { Result } from "better-result"
 import { Schema } from "effect"
 import { join } from "node:path"
@@ -17,7 +19,7 @@ import {
 } from "../lib/env.ts"
 import { detectLayout, mergeInto, readEntries } from "../lib/skills-layout.ts"
 import { runInteractiveCode } from "../lib/exec.ts"
-import { countSubdirectories, isDirectory, link, pathExists, readlinkSafe } from "../lib/fs.ts"
+import { countSubdirectories, isDirectory, link, readlinkSafe } from "../lib/fs.ts"
 import { printError, printInfo, printRaw, printSuccess, printWarning } from "../lib/ui.ts"
 import { VendorManifestJson } from "../lib/vendor-manifest.ts"
 
@@ -81,35 +83,6 @@ async function install(): Promise<number> {
   return 0
 }
 
-async function update(): Promise<number> {
-  const script = join(SKILLS_REPO, "scripts", "sync-vendored.sh")
-  if (!(await pathExists(script))) {
-    printWarning(`No sync script at ${script} — follow ${SKILLS_REPO}/VENDORING.md manually.`)
-    return 1
-  }
-
-  printInfo("Syncing vendored skills (all vendors @ pinnedRef; set VENDOR=/REF= to scope)...")
-  const code = await runInteractiveCode([script], {
-    cwd: SKILLS_REPO,
-    extraEnv: { VENDOR: process.env.VENDOR ?? "", REF: process.env.REF ?? "" },
-  })
-  if (code !== 0) printWarning("sync-vendored.sh reported a problem")
-
-  // INSTALL.md §3: stop for human review. Never auto-commit.
-  printInfo("Review the diff, then commit:")
-  await runInteractiveCode(["git", "-C", SKILLS_REPO, "--no-pager", "diff", "--stat"])
-  return code
-}
-
-async function verify(): Promise<number> {
-  const script = join(SKILLS_REPO, "scripts", "verify-vendored.sh")
-  if (!(await pathExists(script))) {
-    printWarning(`No verify script at ${script}`)
-    return 1
-  }
-  return await runInteractiveCode([script], { cwd: SKILLS_REPO })
-}
-
 async function status(): Promise<number> {
   const count = await countSubdirectories(SKILLS_SRC)
   printInfo(`skills source: ${SKILLS_SRC} (${count} skills)`)
@@ -157,14 +130,10 @@ export async function skills(argv: string[] = []): Promise<number> {
   switch (sub) {
     case "install":
       return await install()
-    case "update":
-      return await update()
     case "status":
       return await status()
-    case "verify":
-      return await verify()
     default:
-      printError(`usage: dotfiles skills {install|update|status|verify}`)
+      printError(`usage: dotfiles skills {install|status}`)
       return 1
   }
 }

@@ -11,7 +11,6 @@ import { IS_DARWIN } from "../lib/platform.ts"
 import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
 import { getStepSink, isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 import { piPlugins } from "./pi.ts"
-import { skills } from "./skills.ts"
 import { stow } from "./stow.ts"
 
 export type UpdateTask = {
@@ -22,7 +21,7 @@ export type UpdateTask = {
   default: boolean
 }
 
-/** The bash `confirm` prompts, as data. Note skills defaulted to N, not Y. */
+/** The bash `confirm` prompts, as data. */
 export const UPDATE_TASKS: UpdateTask[] = [
   { id: "repos", title: "Repos", description: "git pull dotfiles + skills", default: true },
   {
@@ -44,7 +43,6 @@ export const UPDATE_TASKS: UpdateTask[] = [
     description: "review and advance tracked plugin pins",
     default: false,
   },
-  { id: "skills", title: "Vendored skills", description: "re-sync from upstream", default: false },
 ]
 
 export type UpdateRuntime = {
@@ -234,13 +232,6 @@ export async function update(argv: string[] = []): Promise<number> {
       run: async () => ({
         ok: (await piPlugins(["update", ...(argv.includes("--all") ? ["--all"] : [])])) === 0,
       }),
-    })
-  }
-  if (chosen.has("skills")) {
-    steps.push({
-      id: "skills",
-      title: "Vendored skills",
-      run: async () => ({ ok: (await skills(["update"])) === 0 }),
     })
   }
 

@@ -7,7 +7,7 @@ implement. The scripts are written by hand — this is their spec and acceptance
 
 Skills live in the separate [prezus/skills](https://github.com/prezus/skills) repo (our own
 skills + vendored ones, all committed there). This repo does **not** store skill files. It
-**installs from** `prezus/skills` by symlink and drives updates through `dotfiles skills`. One
+**installs from** `prezus/skills` by symlink; updates arrive by pulling that repo. One
 source of truth, no duplication; a committed vendor-sync in `prezus/skills` is live
 everywhere instantly because agents read through the symlinks.
 
@@ -68,19 +68,19 @@ Idempotent; safe to re-run. Must:
 > symlink. On Omarchy that silently removed the `omarchy` and `diagnose-crash` skills from
 > every agent — recoverable from the `.bak`, but broken until someone noticed.
 
-## `dotfiles skills update` — spec
+## Syncing vendored skills — not a `dotfiles` command
 
-Re-syncs the vendored skills in `prezus/skills`, then hands off to a human. Must:
+This used to be `dotfiles skills update`, a wrapper around a sync script in the skills repo.
+It was removed: the script never existed, so the command (and the "Vendored skills" choice in
+`dotfiles update`) only ever failed. More to the point, a sync is an authoring task: it rewrites
+files in `prezus/skills` and ends in a diff a person reviews and commits. `dotfiles update` is
+per-machine maintenance, run everywhere, so offering a sync there invites an uncommitted,
+half-reviewed sync on whichever machine happened to run it.
 
-1. `cd "$SKILLS_REPO"`.
-2. Run the vendoring sync per `prezus/skills/VENDORING.md`: clone upstream at a ref into
-   `repos/` (gitignored) → flatten the shipped set into `skills/` → update
-   `vendor-manifest.json` (pinned commit, date, skill list). Accept a ref override, e.g.
-   `MATT_SKILLS_REF=<sha> dotfiles skills update`.
-3. **Stop for human review.** Show `git -C "$SKILLS_REPO" diff --stat` and instruct the user
-   to read the diff and commit. **Never auto-commit.**
-4. No reinstall afterward — the symlinks already point at `skills/`, so a committed sync is
-   immediately live in all agents.
+Syncing happens **in the skills repo**, following its `VENDORING.md` (and its own script, once
+it has one). Every other machine receives a committed sync through `dotfiles update` → Repos,
+which pulls `$SKILLS_REPO`; the symlinks already point at `skills/`, so nothing needs
+reinstalling.
 
 ## `dotfiles skills status` — spec
 

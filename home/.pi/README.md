@@ -53,8 +53,7 @@ bytes the registry served; they do not establish that those bytes are trustworth
 Pi does **not** carry its own skills. It reads the same canonical pool every agent uses,
 via `~/.pi/agent/skills -> ~/.agents/skills -> ~/Projects/skills/skills`. That link is
 created by `dotfiles skills install` and checked by `dotfiles doctor`. To add, update, or
-verify skills (including the Cloudflare set), work in the **skills repo**, not here —
-`dotfiles skills {update,verify}`.
+verify skills (including the Cloudflare set), work in the **skills repo**, not here.
 
 ## Theme
 

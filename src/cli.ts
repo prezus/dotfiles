@@ -135,9 +135,9 @@ const ALL_COMMANDS: Command[] = [
   },
   {
     name: "skills",
-    // `verify` was dispatched by the bash but missing from its completion list,
-    // so fish never suggested it. Now that it is real TypeScript, list it.
-    description: "install | update | status | verify (from prezus/skills)",
+    // Only the machine-side half. Syncing vendored skills happens in the skills
+    // repo itself; see INSTALL.md.
+    description: "install | status (links from prezus/skills)",
     run: async (args) => (await import("./commands/skills.ts")).skills(args),
   },
   {
