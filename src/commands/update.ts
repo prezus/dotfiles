@@ -34,7 +34,7 @@ export const UPDATE_TASKS: UpdateTask[] = [
   {
     id: "extras",
     title: "Language tools",
-    description: "rustup, cargo, go, bun, fisher",
+    description: "mise, rustup, cargo, go, bun, fisher",
     default: true,
   },
   { id: "stow", title: "Re-stow", description: "re-symlink home/ → $HOME", default: true },
@@ -68,6 +68,12 @@ export async function updateExtras(runtime: UpdateRuntime = defaultUpdateRuntime
     if ((await runtime.runInteractiveCode(command)) !== 0) failed.push(label)
   }
 
+  // mise pins `latest` at install time, so without this its tools (pi, codex,
+  // opencode, gh, Linux claude) stay on whatever version they first got.
+  if (await runtime.commandExists("mise")) {
+    printInfo("mise upgrade...")
+    await runOne("mise", ["mise", "upgrade"])
+  }
   if (await runtime.commandExists("rustup")) {
     printInfo("rustup update...")
     await runOne("rustup", ["rustup", "update"])

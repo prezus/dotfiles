@@ -201,7 +201,7 @@ sequences when piped.
   `idiomatic_version_file_enable_tools = ["node"]`. Vite+ is not installed globally;
   projects that use it declare `vite-plus` locally.
   - **`brew "node"` is deliberately NOT in `packages/bundle`, but IS installed and can't
-    be removed.** Several formulae depend on it (`opencode`, `pi-coding-agent`, `mongosh`,
+    be removed.** Several formulae depend on it (`opencode`, `mongosh`,
     `prettier`, `typescript`, `tailwindcss`, `jupyterlab`, …), and `brew uninstall node`
     refuses. Those CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`, so mise cannot satisfy
     their dependency and changing the project Node cannot break them. Strip `brew "node"`
@@ -210,6 +210,14 @@ sequences when piped.
     `conf.d/zy-mise.fish` must remain the final PATH mutation so its shim outranks
     `/opt/homebrew/bin`. `dotfiles doctor` prints the resolved path and warns when the
     configured mise version does not own it.
+- **Pi is managed by mise on both platforms**, like Node, not Homebrew or the AUR. One
+  source (`pi = "latest"`, Pi's GitHub releases) keeps every machine on the same version,
+  updates Pi alone (`mise upgrade pi`), and rolls back in one command (`mise use -g pi@X`)
+  when a release breaks a pinned plugin. Homebrew lagged releases by about a day and
+  shipped no fish completions for it. Don't re-add `brew "pi-coding-agent"`:
+  two installs means PATH order decides which Pi runs, and the stale one wins silently.
+  mise resolves `latest` once, at install; `dotfiles update` → Language tools runs
+  `mise upgrade` so it doesn't freeze.
 - **1Password SSH** — no keygen; `dotfiles ssh` binds `IdentityAgent`; git signs via `op-ssh-sign`.
 - **Two shells** — zsh is the current login shell; fish is being adopted (starship prompt shared, so both look identical). See `home/.config/fish/AGENTS.md`.
 
