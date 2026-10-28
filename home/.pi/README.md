@@ -13,6 +13,8 @@ repo `.gitignore`):
 | `agent/settings.json` | yes | provider/model/theme config |
 | `agent/themes/*.json` | yes | custom themes (e.g. `catppuccin-macchiato`) |
 | `agent/extensions/zed.ts` | yes | `/zed` command for opening the current project in Zed |
+| `agent/extensions/secret-guard.ts` | yes | ours — see [Guards](#guards) |
+| `agent/extensions/git-interceptor.ts`, `agent/extensions/pi-cloak/`, `agent/cloak.json` | yes | vendored from dmmulroy/.dotfiles — see [Guards](#guards) |
 | `agent/skills` | no — **symlink** | → `~/.agents/skills` (the [skills repo](https://github.com/prezus/skills) canonical pool) |
 | `agent/auth.json` | no — **local** | OAuth/API secrets — never commit |
 | `agent/sessions/` | no — **local** | per-machine runtime state |
@@ -48,6 +50,28 @@ dotfiles pi verify
 Pi packages execute with the user's full permissions. Review the exact published release
 and its runtime dependencies before adding a pin. Registry signatures establish which
 bytes the registry served; they do not establish that those bytes are trustworthy.
+
+## Guards
+
+Three local extensions watch what the agent does. They catch accidents and habits, not a
+determined agent; an OS sandbox (Pi's `examples/extensions/sandbox`) is the real boundary.
+Their tool hooks also see the calls a codemode script makes.
+
+- **`secret-guard.ts`** (ours). Masks known secret formats in *every* tool's output, and
+  1Password's concealed fields in output from any command that ran `op`. Blocks a whole-file
+  `write` over an existing secret file. Asks first before bash that touches secret files,
+  dumps the environment, prints a token, or destroys work (`reset --hard`, `clean -f`,
+  force-push, `rm -rf ~`); with no UI (print mode, subagents) "ask" means blocked.
+  1Password secrets may be *injected* (`op run`, `-o <file>`, piped into a consumer) but never
+  *printed*: `op read`/`inject` to stdout, `--reveal`, `--otp` and `--format json` are blocked.
+  Vault writes ask first; prefer `--generate-password` so the agent never holds the value.
+- **`git-interceptor.ts`** (dmmulroy). Blocks `--no-verify`, and sets `GIT_EDITOR=true` so git
+  never opens an editor the agent cannot close.
+- **`pi-cloak/` + `cloak.json`** (dmmulroy). Masks values in files the agent `read`s, by path
+  (`.env*`, `auth.json`, …). `/cloak-status` shows what loaded.
+
+Test a guard change against real commands before relying on it: the decisions are exported
+(`riskyBash`, `redact`, `redactOpOutput`) and run under plain `bun`.
 
 ## Skills — consumed, not owned
 

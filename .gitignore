@@ -110,6 +110,11 @@ home*/.pi/agent/*
 !home*/.pi/agent/extensions/
 home*/.pi/agent/extensions/*
 !home*/.pi/agent/extensions/zed.ts
+#     Guards vendored from dmmulroy/.dotfiles; cloak.json is pi-cloak's pattern list.
+!home*/.pi/agent/extensions/git-interceptor.ts
+!home*/.pi/agent/extensions/secret-guard.ts
+!home*/.pi/agent/extensions/pi-cloak/
+!home*/.pi/agent/cloak.json
 # NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
 # the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
 

@@ -1,0 +1,37 @@
+{
+  "enabled": true,
+  "cloakCharacter": "*",
+  "cloakLength": null,
+  "tryAllPatterns": true,
+  "patterns": [
+    {
+      "filePattern": "**/*.env*",
+      "cloakPattern": "(=).+",
+      "replace": "$1"
+    },
+    {
+      "filePattern": "**/*.vars*",
+      "cloakPattern": "(=).+",
+      "replace": "$1"
+    },
+    {
+      "filePattern": ["**/opencode.json", "**/*.opencode.json"],
+      "cloakPattern": "(\\\"apiKey\\\"\\s*:\\s*\\\")[^\\\"]+",
+      "replace": "$1"
+    },
+    {
+      "filePattern": "**/config.toml",
+      "cloakPattern": "(token\\s*=\\s*).+",
+      "replace": "$1"
+    },
+    {
+      "filePattern": ["**/auth.json", "**/web-search.json"],
+      "cloakPattern": [
+        {
+          "pattern": "(\\\"(?:token|access|refresh|accessToken|refreshToken|apiKey|[A-Za-z]+ApiKey|secret|password|clientSecret|idToken|sessionToken|authorization)\\\"\\s*:\\s*\\\")[^\\\"]+",
+          "replace": "$1"
+        }
+      ]
+    }
+  ]
+}
