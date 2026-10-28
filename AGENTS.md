@@ -29,6 +29,7 @@ dotfiles/
 │       ├── zed/              # Editor (AGENTS.md) — LSP/formatter/theme
 │       ├── nvim/             # Neovim: init.lua + lazy-lock.json (lazy.nvim)
 │       ├── starship/         # prompt
+│       ├── rex/              # Rex multiplexer: init.lua (keys, modes, actions)
 │       ├── mise/ git/ ripgrep/ opencode/ gh/
 ├── home-darwin/              # macOS-only overlay
 │   ├── .zshrc .zprofile .zshenv .profile
@@ -72,6 +73,7 @@ dotfiles/
 | Git identity / signing | `home/.gitconfig` |
 | SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
+| Rex keys / actions / modes | `home/.config/rex/init.lua` (Lua; `require` siblings). Not watched — `rex config check`, then `rex config reload`. Runtime state is in `~/Library/Application Support/rex`, never here |
 | Tiling WM (macOS) | `home-darwin/.config/aerospace/aerospace.toml` |
 | Tiling WM (Omarchy) | `home-omarchy/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
