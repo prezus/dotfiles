@@ -271,6 +271,14 @@ const FIXES = {
     },
   },
 
+  "repo-hooks": {
+    label: "wire the repo's hooks",
+    run: async () => {
+      const { wireHooks } = await import("../../lib/githooks.ts")
+      return (await wireHooks()) ? "repo hooks wired" : "git config core.hooksPath failed"
+    },
+  },
+
   "broken-symlinks": {
     label: "remove broken links",
     run: async () => {

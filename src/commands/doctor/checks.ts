@@ -40,6 +40,7 @@ import {
   readlinkSafe,
 } from "../../lib/fs.ts"
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
+import { HOOKS_PATH, hooksWired } from "../../lib/githooks.ts"
 import { CONFLICT_REASON, planStowAll } from "../../lib/stow.ts"
 import { readEntries } from "../../lib/skills-layout.ts"
 import { IS_OMARCHY, PLATFORM, type Platform } from "../../lib/platform.ts"
@@ -579,6 +580,27 @@ const gitSigningCheck: Check = {
   },
 }
 
+/** The repo is public; its hooks run gitleaks over every commit and push. */
+const repoHooksCheck: Check = {
+  id: "repo-hooks",
+  section: "Security",
+  label: "repo hooks",
+  run: async () => {
+    const [wired, scanner] = await Promise.all([hooksWired(), commandExists("gitleaks")])
+    if (!wired)
+      return {
+        status: "warn",
+        message: `repo hooks — not wired, commits are not scanned (core.hooksPath ≠ ${HOOKS_PATH})`,
+      }
+    if (!scanner)
+      return {
+        status: "warn",
+        message: `repo hooks — gitleaks missing, so every commit is refused (${backend.installHint("gitleaks")})`,
+      }
+    return { status: "ok", message: "repo hooks — gitleaks scans each commit and push" }
+  },
+}
+
 // ─── Packages ───────────────────────────────────────────────────────
 
 export { normalizeBundle } from "../../lib/brewbackend.ts"
@@ -1091,6 +1113,7 @@ const ALL_CHECKS: Check[] = [
   vendoredIntegrityCheck,
   onePasswordCheck,
   gitSigningCheck,
+  repoHooksCheck,
   missingPackagesCheck,
   untrackedPackagesCheck,
   cargoToolsCheck,

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Scans what is staged for secrets and private network details.
+# shellcheck source-path=SCRIPTDIR source=lib.sh
+. "$(dirname -- "$0")/lib.sh"
+scan --pre-commit --staged

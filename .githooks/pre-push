@@ -1,0 +1,16 @@
+#!/bin/sh
+# Scans every commit being pushed, so one made with --no-verify, or before the
+# hooks were wired, is caught before it is public.
+# shellcheck source-path=SCRIPTDIR source=lib.sh
+. "$(dirname -- "$0")/lib.sh"
+remote=$1
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue # a branch deletion pushes nothing
+    if [ "$remote_sha" = "$zero" ]; then
+        range="$local_sha --not --remotes=$remote"
+    else
+        range="$remote_sha..$local_sha"
+    fi
+    scan --log-opts="$range"
+done

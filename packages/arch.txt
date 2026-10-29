@@ -22,6 +22,8 @@ ghostty
 
 # ─── Development ────────────────────────────────────────────────────
 github-cli
+#     gitleaks: this repo's pre-commit/pre-push hooks (.githooks/).
+gitleaks
 just
 zed
 

@@ -49,6 +49,7 @@ dotfiles/
 │   ├── rust.txt              # rustup toolchains/components/targets (`dotfiles rust`)
 │   ├── cargo.txt go.txt      # crates + go tools, BOTH platforms (`dotfiles lang-tools`)
 │   └── bun-global.txt        # JS-only global CLIs with no native package
+├── .githooks/ .gitleaks.toml # secret scan on commit + push — see GIT WORKFLOW
 ├── AGENTS.md README.md INSTALL.md   # this file + human docs + dotfiles spec
 └── .gitignore
 ```
@@ -105,6 +106,22 @@ dotfiles/
 - **Idempotency:** every `dotfiles` step is safe to re-run.
 - **No hardcoded paths** in scripts — use `$DOTFILES_DIR`, `$HOME`, `$SKILLS_REPO`.
 
+## GIT WORKFLOW
+
+- **"Commit" means commit AND push.** When asked to commit, commit to the current
+  branch and `git push` it in the same step. Work lands on `main`.
+- **No pull requests.** Single-user repo, no CI, `main` unprotected: a PR is only
+  overhead. Don't open one or suggest one; don't create a feature branch unless asked.
+- **The repo is PUBLIC.** `.githooks/` runs gitleaks with `.gitleaks.toml` on every
+  commit (staged files) and every push (each new commit). The config adds
+  secret-only files (`.env`, keys, `auth.json`, …) and home-network details
+  (RFC 1918 addresses, tailnet names) to gitleaks' default credential rules.
+  The hooks run once `core.hooksPath` is set **locally** (`dotfiles init`, or
+  `dotfiles doctor` → repo hooks). They fail closed if gitleaks is missing.
+- **A block is a finding, not an obstacle.** Remove the value. Allowlist a path in
+  `.gitleaks.toml` only when the file can't work without it (as with
+  `config/resolver/`), and say so in the commit.
+
 ## PLATFORMS
 
 `src/lib/platform.ts` answers *which machine*; `src/lib/env.ts` answers *where is
@@ -155,6 +172,8 @@ the file*. **No third module branches on platform to build a path.** Importing
   it's committed — see NOTES for the command.
 - Committing skill files into this repo — they belong in `prezus/skills`.
 - Committing `~/.ssh/config`, keys, or secrets — SSH is `dotfiles ssh`-managed; keys are in 1Password.
+- `git commit --no-verify` / `git push --no-verify`, or a global `core.hooksPath` —
+  the first skips the secret scan; the second is global git config, which this repo doesn't set.
 - Adding anything under `home/.claude/` beyond authored config (`settings.json`, and
   later `CLAUDE.md`, `keybindings.json`, `commands/`, `agents/`, `hooks/` if they appear).
   `.gitignore` denies the directory by default — un-ignore the new file explicitly.
@@ -169,7 +188,7 @@ the file*. **No third module branches on platform to build a path.** Importing
 ```
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
-dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills
+dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → hooks → mise → Pi → ssh → fish → skills
 dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected

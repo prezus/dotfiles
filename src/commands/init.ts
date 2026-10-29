@@ -25,6 +25,7 @@ import { skills } from "./skills.ts"
 import { ssh } from "./ssh.ts"
 import { stow } from "./stow.ts"
 import { runInteractiveCode } from "../lib/exec.ts"
+import { wireHooks } from "../lib/githooks.ts"
 import { runSteps, type Step } from "../lib/steps.ts"
 import { IS_DARWIN } from "../lib/platform.ts"
 import { getStepSink, printError, printHeader, printSuccess, printWarning } from "../lib/ui.ts"
@@ -53,6 +54,13 @@ function sharedTail(): Step[] {
       title: "Stow dotfiles",
       required: true,
       run: () => fromExitCode(() => stow([])),
+    },
+    {
+      // A clone never runs hooks until it opts in; the scanner itself comes
+      // from the packages step.
+      id: "git-hooks",
+      title: "Repo secret-scan hooks",
+      run: async () => ({ ok: await wireHooks() }),
     },
     {
       id: "mise",

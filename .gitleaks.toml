@@ -1,0 +1,41 @@
+# Read by .githooks/pre-commit and pre-push. This repo is PUBLIC.
+#
+# gitleaks' default rules catch credentials (tokens, API keys, private key
+# blocks). The rules below add what is private to this setup but has no
+# token shape: files that only ever hold secrets, and the home network.
+
+[extend]
+useDefault = true
+
+# Files that hold secrets by nature, whatever is in them today.
+[[rules]]
+id = "secret-file"
+description = "A file that only ever holds secrets (key, credential store, env file)"
+path = '''(?i)(^|/)(id_(rsa|ecdsa|ed25519|dsa)|[^/]*\.(pem|key|p12|pfx|keystore|jks|kdbx)|\.env(\.[^/]*)?|\.netrc|\.npmrc|\.pypirc|credentials(\.json)?|auth\.json|kubeconfig|\.kube/config|\.ssh/config|\.aws/[^/]+|\.docker/config\.json|\.git-credentials)$'''
+
+# Example env files are templates, not secrets.
+[[rules.allowlists]]
+paths = ['''(?i)\.env\.(example|sample|template)$''']
+
+# Home network addresses and tailnet names. The allowlist below is the
+# complete set of files that need them to work; anything else is a leak.
+[[rules]]
+id = "private-network"
+description = "Private (RFC 1918) address or Tailscale tailnet name"
+regex = '''\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|tail[0-9a-f]+\.ts\.net)\b'''
+
+[[rules.allowlists]]
+paths = [
+  # /etc/resolver files: each is a nameserver address by definition.
+  '''^config/resolver/''',
+  # VBAN needs the receiving PC's address.
+  '''^home-linux/\.config/pipewire/pipewire\.conf\.d/vban-send\.conf$''',
+]
+
+[[rules]]
+id = "tailnet-path"
+description = "Tailscale tailnet name in a file path"
+path = '''tail[0-9a-f]+\.ts\.net'''
+
+[[rules.allowlists]]
+paths = ['''^config/resolver/''']
