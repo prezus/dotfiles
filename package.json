@@ -6,7 +6,7 @@
   "description": "macOS + Omarchy/Arch dev environment CLI — packages, stow, fish, skills",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test ./src ./home/.config/secret-guard",
     "lint": "oxlint"
   },
   "dependencies": {

@@ -115,6 +115,15 @@ home*/.pi/agent/extensions/*
 !home*/.pi/agent/extensions/secret-guard.ts
 !home*/.pi/agent/extensions/pi-cloak/
 !home*/.pi/agent/cloak.json
+# Secret Guard's shared rules (every agent's adapter imports them). The folder name
+# matches **/*secret*, so each file is listed; learned values live in
+# ~/.local/state/secret-guard, never here.
+!home*/.config/secret-guard/
+home*/.config/secret-guard/*
+!home*/.config/secret-guard/guard.ts
+!home*/.config/secret-guard/known.ts
+!home*/.config/secret-guard/learn.ts
+!home*/.config/secret-guard/guard.test.ts
 # NOTE: skills/ is intentionally NOT tracked here — Pi consumes the canonical pool from
 # the skills repo via ~/.pi/agent/skills -> ~/.agents/skills (see `dotfiles skills`).
 

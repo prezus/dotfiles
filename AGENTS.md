@@ -83,6 +83,7 @@ dotfiles/
 | Something that differs per Linux distro | `home-omarchy/` or `home-cachyos/`; packages in `packages/omarchy.txt`, `cachyos.txt`, `cachyos-aur.txt` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); vendored syncs happen there too (its `VENDORING.md`) |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
+| Agent secret guardrails (what agents may run, what gets masked before the model sees it) | `home/.config/secret-guard/guard.ts` — the rules, shared by every agent; adapters only wire them in (Pi: `home/.pi/agent/extensions/secret-guard.ts`). Values to mask by value: `bun ~/.config/secret-guard/learn.ts` (hashes only, in `~/.local/state/secret-guard/`). Tests: `bun run test` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
 | Homelab / tailnet DNS on the Mac (Twingate + Tailscale) | `config/resolver/` (one file per domain → `/etc/resolver/`), `bin/resolver-install`; `dotfiles resolver {install,status,uninstall}`. Twingate keeps the default resolver (work), so Tailscale DNS is off; homelab domains go to CoreDNS, the tailnet to MagicDNS |
