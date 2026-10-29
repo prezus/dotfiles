@@ -90,7 +90,13 @@ export function reduceDoctorKey(
 
 // ─── home dashboard ─────────────────────────────────────────────────
 
-export type HomeState = { cursor: number }
+/**
+ * The dashboard is a fuzzy search: typing narrows the list to the commands the
+ * query matches, best first, and the cursor sits on the closest one, so
+ * `resolv` ⏎ runs resolver. Letters therefore always type, which is why quit,
+ * refresh and movement live on keys no command name contains.
+ */
+export type HomeState = { cursor: number; query: string }
 
 export type HomeIntent =
   | { kind: "none" }
@@ -102,20 +108,97 @@ export type HomeIntent =
 /** What a keypress does to the dashboard: where the cursor lands, and what to perform. */
 export type HomeKeyResult = { state: HomeState; intent: HomeIntent }
 
-export const initialHomeState = (): HomeState => ({ cursor: 0 })
+export const initialHomeState = (): HomeState => ({ cursor: 0, query: "" })
+
+/**
+ * Score `name` against `query`, or null when the query's characters do not all
+ * appear in order. Lower is closer: a prefix beats a substring beats a scattered
+ * subsequence, and within each, an earlier and tighter match wins.
+ */
+function fuzzyScore(query: string, name: string): number | null {
+  if (name.startsWith(query)) return name.length - query.length
+  const at = name.indexOf(query)
+  if (at >= 0) return 1000 + at
+  let from = 0
+  let first = -1
+  for (const ch of query) {
+    const i = name.indexOf(ch, from)
+    if (i < 0) return null
+    if (first < 0) first = i
+    from = i + 1
+  }
+  return 2000 + first * 10 + (from - first - query.length)
+}
+
+/** The commands `query` matches, closest first; ties keep their listed order. */
+export function fuzzyFilter(query: string, names: readonly string[]): string[] {
+  if (query === "") return [...names]
+  const q = query.toLowerCase()
+  return names
+    .map((name, index) => ({ name, index, score: fuzzyScore(q, name.toLowerCase()) }))
+    .filter((m): m is { name: string; index: number; score: number } => m.score !== null)
+    .sort((a, b) => a.score - b.score || a.index - b.index)
+    .map((m) => m.name)
+}
+
+const isTyped = (name: string | undefined): name is string =>
+  name !== undefined && name.length === 1 && /[a-z0-9-]/.test(name)
 
 export function reduceHomeKey(
   state: HomeState,
   key: KeyEvent,
   commands: readonly string[],
 ): HomeKeyResult {
+  const visible = fuzzyFilter(state.query, commands)
+  const last = Math.max(0, visible.length - 1)
+  const cursor = clamp(state.cursor, last)
+  const none = (next: HomeState): HomeKeyResult => ({ state: next, intent: { kind: "none" } })
+
+  if (key.ctrl === true && key.name === "c") return { state, intent: { kind: "quit" } }
+  // Escape clears a search first, so it never quits out from under one.
+  if (key.name === "escape")
+    return state.query === "" ? { state, intent: { kind: "quit" } } : none(initialHomeState())
+  if (key.ctrl === true && key.name === "r") return { state, intent: { kind: "refresh" } }
+  if (key.name === "down" || (key.ctrl === true && key.name === "n"))
+    return none({ ...state, cursor: clamp(cursor + 1, last) })
+  if (key.name === "up" || (key.ctrl === true && key.name === "p"))
+    return none({ ...state, cursor: clamp(cursor - 1, last) })
+
+  if (key.name === "return") {
+    const command = visible[cursor]
+    if (command === undefined) return { state, intent: { kind: "none" } }
+    return { state: initialHomeState(), intent: { kind: "run", command } }
+  }
+
+  if (key.name === "backspace") return none({ cursor: 0, query: state.query.slice(0, -1) })
+  if (key.ctrl !== true && isTyped(key.name)) return none({ cursor: 0, query: state.query + key.name })
+
+  return { state, intent: { kind: "none" } }
+}
+
+// ─── action menu ────────────────────────────────────────────────────
+
+/** A short fixed menu (install / status / uninstall): j/k, q, first-letter jumps. */
+export type MenuState = { cursor: number }
+
+export type MenuIntent =
+  | { kind: "none" }
+  | { kind: "quit" }
+  | { kind: "run"; command: string }
+
+export const initialMenuState = (): MenuState => ({ cursor: 0 })
+
+export function reduceMenuKey(
+  state: MenuState,
+  key: KeyEvent,
+  commands: readonly string[],
+): { state: MenuState; intent: MenuIntent } {
   const last = Math.max(0, commands.length - 1)
   const cursor = clamp(state.cursor, last)
 
   if (isQuit(key)) return { state, intent: { kind: "quit" } }
   if (isDown(key)) return { state: { cursor: clamp(cursor + 1, last) }, intent: { kind: "none" } }
   if (isUp(key)) return { state: { cursor: clamp(cursor - 1, last) }, intent: { kind: "none" } }
-  if (key.name === "r") return { state, intent: { kind: "refresh" } }
 
   if (key.name === "return") {
     const command = commands[cursor]
@@ -123,17 +206,14 @@ export function reduceHomeKey(
     return { state, intent: { kind: "run", command } }
   }
 
-  // First-letter jump: `d` for doctor, `u` for update, and so on. Ambiguous
-  // letters cycle through the matches rather than always landing on the first.
+  // First-letter jump; ambiguous letters cycle through the matches.
   const keyName = key.name
   if (keyName && keyName.length === 1 && /[a-z]/.test(keyName)) {
     const matches = commands
       .map((c, i) => ({ c, i }))
       .filter(({ c }) => c.startsWith(keyName))
-    if (matches.length > 0) {
-      const next = matches.find(({ i }) => i > cursor) ?? matches[0]
-      if (next) return { state: { cursor: next.i }, intent: { kind: "none" } }
-    }
+    const next = matches.find(({ i }) => i > cursor) ?? matches[0]
+    if (next) return { state: { cursor: next.i }, intent: { kind: "none" } }
   }
 
   return { state, intent: { kind: "none" } }

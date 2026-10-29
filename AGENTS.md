@@ -84,6 +84,7 @@ dotfiles/
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
+| Homelab / tailnet DNS on the Mac (Twingate + Tailscale) | `config/resolver/` (one file per domain → `/etc/resolver/`), `bin/resolver-install`; `dotfiles resolver {install,status,uninstall}`. Twingate keeps the default resolver (work), so Tailscale DNS is off; homelab domains go to CoreDNS, the tailnet to MagicDNS |
 | Wire a new machine | `dotfiles init` |
 
 ## CONVENTIONS
@@ -183,6 +184,8 @@ dotfiles bun             Install JS globals from packages/bun-global.txt
 dotfiles plannotator     Install the Plannotator CLI to ~/.local/bin
 dotfiles unquarantine    Opt-in macOS quarantine cleaner: action menu, or install | status | uninstall
                          Not enabled by init/stow; bin/ owns the script, CLI owns its installed link.
+dotfiles resolver        Opt-in macOS: /etc/resolver files from config/resolver/ + Tailscale DNS off
+                         (install | status | uninstall; needs sudo). Not part of init.
 dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP)
 dotfiles fish            Default login shell + fisher plugins + tool completions
 dotfiles skills          install | status   (links from prezus/skills; syncing lives in that repo)

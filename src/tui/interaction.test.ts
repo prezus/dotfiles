@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  fuzzyFilter,
   initialDoctorNav,
   initialHomeState,
   initialPickerState,
@@ -29,15 +30,18 @@ describe("keyboard interaction", () => {
     expect(reduceDoctorKey(nav, { name: "q" }, doctorRows).intent.kind).toBe("quit")
   })
 
-  it("navigates the dashboard without letting first-letter jumps steal reserved keys", () => {
-    const commands = ["init", "update", "doctor", "stow", "ssh", "skills", "rust"]
-    let state = reduceHomeKey(initialHomeState(), { name: "d" }, commands).state
-    expect(reduceHomeKey(state, { name: "return" }, commands).intent).toEqual({ kind: "run", command: "doctor" })
-    state = reduceHomeKey(state, { name: "s" }, commands).state
-    expect(commands[state.cursor]).toBe("stow")
-    state = reduceHomeKey(state, { name: "s" }, commands).state
-    expect(commands[state.cursor]).toBe("ssh")
-    expect(reduceHomeKey(state, { name: "r" }, commands).intent.kind).toBe("refresh")
+  it("searches the dashboard: typing narrows to the closest command, escape clears before quitting", () => {
+    const commands = ["init", "update", "doctor", "stow", "ssh", "skills", "rust", "reconcile", "resolver", "retry-failed"]
+    let state = initialHomeState()
+    for (const name of "resolv") state = reduceHomeKey(state, { name }, commands).state
+    expect(fuzzyFilter(state.query, commands)).toEqual(["resolver"])
+    expect(reduceHomeKey(state, { name: "return" }, commands).intent).toEqual({ kind: "run", command: "resolver" })
+    expect(fuzzyFilter("st", commands)).toEqual(["stow", "rust"])
+    expect(fuzzyFilter("rf", commands)).toEqual(["retry-failed"])
+    expect(reduceHomeKey(state, { name: "escape" }, commands).state.query).toBe("")
+    expect(reduceHomeKey(initialHomeState(), { name: "escape" }, commands).intent.kind).toBe("quit")
+    expect(reduceHomeKey(initialHomeState(), { name: "q" }, commands).intent.kind).toBe("none")
+    expect(reduceHomeKey(initialHomeState(), { name: "r", ctrl: true }, commands).intent.kind).toBe("refresh")
   })
 
   it("updates picker selection while keeping cancel distinct from confirming nothing", () => {

@@ -1,0 +1,55 @@
+#!/bin/bash
+# Invoked by `dotfiles resolver`; never run automatically during init/stow.
+# Twingate and Tailscale both want to be the Mac's default resolver and macOS has one.
+# Twingate keeps it (work names resolve to its tunnel addresses); config/resolver/* hands
+# the homelab domains to CoreDNS and the tailnet to MagicDNS, per domain.
+set -o pipefail
+fail() { printf 'resolver install: %s\n' "$*" >&2; exit 1; }
+if [ "$#" -ne 1 ]; then printf 'Usage: resolver-install install|uninstall|status\n' >&2; exit 2; fi
+case "$1" in install|uninstall|status) action=$1 ;; *) exit 2 ;; esac
+[ "$(uname -s)" = Darwin ] || fail 'macOS is required'
+repo_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd) || exit 1
+src_dir=$repo_dir/config/resolver
+dest_dir=/etc/resolver
+marker='# Managed by dotfiles resolver'
+tailscale_bin=$(command -v tailscale) || fail 'tailscale CLI not found'
+
+owned() { [ -f "$1" ] && [ ! -L "$1" ] && head -n 1 "$1" | grep -Fq "$marker"; }
+
+if [ "$action" = status ]; then
+    for src in "$src_dir"/*; do
+        name=$(basename -- "$src")
+        dest=$dest_dir/$name
+        if cmp -s "$src" "$dest"; then printf '%-22s installed\n' "$name"
+        elif [ -e "$dest" ]; then printf '%-22s differs from the repo\n' "$name"
+        else printf '%-22s missing\n' "$name"; fi
+    done
+    if "$tailscale_bin" debug prefs 2>/dev/null | grep -q '"CorpDNS": false'; then
+        printf 'Tailscale DNS          off (Twingate is the default resolver)\n'
+    else
+        printf 'Tailscale DNS          on (it takes the default resolver from Twingate)\n'
+    fi
+    exit 0
+fi
+
+if [ "$action" = uninstall ]; then
+    for src in "$src_dir"/*; do
+        dest=$dest_dir/$(basename -- "$src")
+        if owned "$dest"; then sudo rm -- "$dest" || exit 1; fi
+    done
+    "$tailscale_bin" set --accept-dns=true || fail 'tailscale set --accept-dns=true failed'
+    printf 'Removed the managed resolver files; Tailscale DNS is on again.\n'
+    exit 0
+fi
+
+# Never overwrite a resolver file someone else wrote.
+for src in "$src_dir"/*; do
+    dest=$dest_dir/$(basename -- "$src")
+    if [ -e "$dest" ] || [ -L "$dest" ]; then owned "$dest" || fail "Refusing unowned file: $dest"; fi
+done
+sudo mkdir -p "$dest_dir" || exit 1
+for src in "$src_dir"/*; do
+    sudo install -m 0644 -o root -g wheel "$src" "$dest_dir/$(basename -- "$src")" || exit 1
+done
+"$tailscale_bin" set --accept-dns=false || fail 'tailscale set --accept-dns=false failed'
+printf 'Installed %s; Tailscale DNS is off, Twingate keeps the default resolver.\n' "$(cd "$src_dir" && echo *)"

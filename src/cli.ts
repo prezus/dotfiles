@@ -129,6 +129,15 @@ const ALL_COMMANDS: Command[] = [
     run: async (args) => (await import("./commands/unquarantine.ts")).unquarantine(args),
   },
   {
+    name: "resolver",
+    platforms: ["darwin"],
+    description: "install | uninstall | status for the homelab/tailnet DNS resolver files",
+    help:
+      "Per-domain /etc/resolver files from config/resolver/ (homelab → CoreDNS, tailnet → MagicDNS)\n" +
+      "and Tailscale DNS off, so Twingate keeps the default resolver. Opt-in; needs sudo.",
+    run: async (args) => (await import("./commands/resolver.ts")).resolver(args),
+  },
+  {
     name: "fish",
     description: "Make fish the default login shell + install fisher plugins",
     run: async () => (await import("./commands/fish.ts")).fish(),

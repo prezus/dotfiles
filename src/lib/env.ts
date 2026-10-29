@@ -19,6 +19,9 @@ export const PACKAGES_DIR = join(DOTFILES_DIR, "packages")
 /** Opt-in launchd installer; its standalone Bash worker has no Bun dependency. */
 export const UNQUARANTINE_INSTALLER = join(DOTFILES_DIR, "bin", "unquarantine-install")
 
+/** Opt-in: per-domain /etc/resolver files (config/resolver/) and Tailscale DNS off. */
+export const RESOLVER_INSTALLER = join(DOTFILES_DIR, "bin", "resolver-install")
+
 /** The SHARED stow source tree (repo), NOT $HOME. `dotfiles fish` writes
  *  generated completions in here and stow links them out — see AGENTS.md
  *  ANTI-PATTERNS. Platform-specific files live in OVERLAY_DIR instead. */

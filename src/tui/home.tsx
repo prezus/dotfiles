@@ -17,6 +17,7 @@ import { VERSION } from "../lib/env.ts"
 import { setLogSink, setStepSink, setTerminalSink, type LogLevel, type StepEvent } from "../lib/ui.ts"
 import { planStow, type StowPlan } from "../lib/stow.ts"
 import {
+  fuzzyFilter,
   initialHomeState,
   initialOutputState,
   reduceHomeKey,
@@ -32,6 +33,8 @@ import { BOLD, theme } from "./theme.ts"
 import { Picker } from "./update-picker.tsx"
 import { UnquarantinePicker } from "./unquarantine-picker.tsx"
 import { unquarantine } from "../commands/unquarantine.ts"
+import { ResolverPicker } from "./resolver-picker.tsx"
+import { resolver } from "../commands/resolver.ts"
 import { ReconcilePicker, type ReconcileRow } from "./reconcile-picker.tsx"
 import { applyReconcile, collectReconcileRows } from "../commands/reconcile.ts"
 
@@ -41,6 +44,8 @@ export type HomeCommand = {
   /** Runs with tool output rendered in the embedded terminal pane. */
   run: () => Promise<number>
 }
+
+type View = "home" | "doctor" | "update" | "unquarantine" | "resolver" | "reconcile" | "output"
 
 type Summary = {
   checks: CompletedCheck[] | null
@@ -129,7 +134,7 @@ function Home({
   // enters, destroy, resume — which reads as a flash. Worse, the second
   // renderer overwrote the global in setRenderer(), so afterwards
   // withSuspendedUI pointed at a destroyed renderer.
-  const [view, setView] = useState<"home" | "doctor" | "update" | "unquarantine" | "reconcile" | "output">("home")
+  const [view, setView] = useState<View>("home")
   // Gathered BEFORE the picker mounts, because computing drift shells out to
   // `brew bundle dump` and a picker cannot render rows it does not have yet.
   const [reconcileRows, setReconcileRows] = useState<ReconcileRow[]>([])
@@ -189,19 +194,22 @@ function Home({
     setTerminalFrame(session.snapshot())
   }, [size.columns, size.rows])
 
-  const names = commands.map((c) => c.name)
+  // The list the dashboard shows: every command, then quit as a row of its own.
+  const entries = [...commands, { name: "quit", description: "Leave the dashboard" }]
+  const names = entries.map((c) => c.name)
 
-  const refresh = useCallback(() => {
+  // `after`: the status line to leave once gathering is done (a command's result).
+  const refresh = useCallback((after = "") => {
     setSummary({ checks: null, stow: null })
-    setStatus("gathering status…")
+    setStatus(after === "" ? "gathering status…" : after)
     void (async () => {
       const [checks, stow] = await Promise.all([runChecks(), planStow()])
       setSummary({ checks, stow })
-      setStatus("")
+      setStatus(after)
     })()
   }, [])
 
-  useEffect(refresh, [refresh])
+  useEffect(() => refresh(), [refresh])
 
   // Ghostty's native selection is unavailable while OpenTUI owns the mouse.
   // Copy as soon as OpenTUI finishes a drag, then also support copy shortcuts
@@ -226,7 +234,13 @@ function Home({
   const rule = "─".repeat(Math.max(10, size.columns - 4))
 
   const runInPane = useCallback(
-    async (label: string, run: () => Promise<number>) => {
+    // Success goes back to where the command was picked (the dashboard, or the
+    // menu an action came from, which shows its own result); the output stays
+    // one ^o away. A sudo child prints to the real terminal and leaves the pane
+    // empty, so parking on it after success only showed "exited 0". A failure
+    // stays here to be read.
+    async (label: string, run: () => Promise<number>, returnTo: View = "home") => {
+      let code: number | null = null
       setBusy(true)
       stepRef.current = null
       startedAt.current = Date.now()
@@ -251,7 +265,7 @@ function Home({
       })
       flushTimer.current = setInterval(flushPending, FLUSH_MS)
       try {
-        const code = await run()
+        code = await run()
         setStatus(`${label} exited ${code}`)
       } catch (error) {
         setStatus(`${label} failed: ${String(error)}`)
@@ -263,15 +277,21 @@ function Home({
         flushPending()
         setBusy(false)
       }
+      if (code === 0) {
+        const done = `✓ ${label} done · ^o output`
+        setView(returnTo)
+        if (returnTo === "home") refresh(done)
+        else setStatus(done)
+      }
     },
-    [flushPending, size.columns, size.rows, stopFlushing],
+    [flushPending, refresh, size.columns, size.rows, stopFlushing],
   )
 
   const runCommand = useCallback(
     async (name: string) => {
       if (busy) return
       // These are themselves full-screen; render them on this renderer.
-      if (name === "doctor" || name === "update" || name === "unquarantine") {
+      if (name === "doctor" || name === "update" || name === "unquarantine" || name === "resolver") {
         setView(name)
         return
       }
@@ -335,9 +355,14 @@ function Home({
     // While a sub-view is mounted it owns the keyboard; ours must stay quiet or
     // both handlers fire on the same keypress.
     if (busy || view !== "home") return
+    // Reopen the last command's output after it returned here on success.
+    if (key.ctrl === true && key.name === "o") {
+      if (terminalRef.current) setView("output")
+      return
+    }
     const { state: next, intent } = reduceHomeKey(state, key, names)
     setState(next)
-    if (intent.kind === "quit") onExit(0)
+    if (intent.kind === "quit" || (intent.kind === "run" && intent.command === "quit")) onExit(0)
     else if (intent.kind === "refresh") refresh()
     else if (intent.kind === "run") void runCommand(intent.command)
   })
@@ -441,7 +466,20 @@ function Home({
           setStatus("unquarantine cancelled")
           return
         }
-        void runInPane(`unquarantine ${action}`, () => unquarantine([action]))
+        void runInPane(`unquarantine ${action}`, () => unquarantine([action]), "unquarantine")
+      }} />
+    )
+  }
+
+  if (view === "resolver") {
+    return (
+      <ResolverPicker onDone={(action) => {
+        setView("home")
+        if (action === null) {
+          setStatus("resolver cancelled")
+          return
+        }
+        void runInPane(`resolver ${action}`, () => resolver([action]), "resolver")
       }} />
     )
   }
@@ -490,22 +528,25 @@ function Home({
   // overflow by a row exactly when a command is running (status shown) on a
   // list long enough to scroll — i.e. only under load.
   const viewport = Math.max(3, size.rows - 13)
-  const cursor = Math.min(state.cursor, commands.length - 1)
+  // Typing filters the list, closest match first; an empty query shows them all.
+  const byName = new Map(entries.map((c) => [c.name, c]))
+  const shown = fuzzyFilter(state.query, names).flatMap((n) => byName.get(n) ?? [])
+  const cursor = Math.min(state.cursor, Math.max(0, shown.length - 1))
   // A command row is `❯ name<pad to 16> description`, and a long description
   // wraps on a narrow terminal — windowFor budgets one row each, so cap the
   // count by the widest row's real height rather than letting it overflow.
-  const widest = commands.reduce(
+  const widest = shown.reduce(
     (n, c) => Math.max(n, wrappedRows(`${c.name.padEnd(16)}${c.description}`, size.columns - 4, 3)),
     1,
   )
   const rowWindow = windowFor(
     commandStartRef.current,
-    commands.length,
+    shown.length,
     cursor,
     Math.max(3, Math.floor(viewport / widest)),
   )
   commandStartRef.current = rowWindow.start
-  const { above, below } = hiddenCounts(rowWindow, commands.length)
+  const { above, below } = hiddenCounts(rowWindow, shown.length)
 
   return (
     <box key="home" flexDirection="column" padding={1} flexGrow={1}>
@@ -537,10 +578,14 @@ function Home({
       </box>
 
       <box flexDirection="column" marginTop={1}>
-        <text fg={theme.fg} attributes={BOLD}>
-          commands
-        </text>
-        {commands.slice(rowWindow.start, rowWindow.end).map((command, offset) => {
+        <box flexDirection="row">
+          <text fg={theme.fg} attributes={BOLD}>
+            commands
+          </text>
+          {state.query !== "" && <text fg={theme.orange}>{`  / ${state.query}`}</text>}
+        </box>
+        {state.query !== "" && shown.length === 0 && <text fg={theme.dim}>   no match</text>}
+        {shown.slice(rowWindow.start, rowWindow.end).map((command, offset) => {
           const active = rowWindow.start + offset === cursor
           return (
             <box key={command.name} flexDirection="row">
@@ -562,7 +607,7 @@ function Home({
           </text>
         )}
         {status !== "" && <text fg={busy ? theme.orange : theme.gray}>{status}</text>}
-        <text fg={theme.bgHard}>↑↓ nav · a-z jump · ⏎ run · r refresh · q quit</text>
+        <text fg={theme.bgHard}>type to search · ↑↓ nav · ⏎ run · esc clear/quit · ^r refresh · ^o last output</text>
       </box>
     </box>
   )
