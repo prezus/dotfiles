@@ -65,6 +65,16 @@ describe("masking", () => {
 		expect(JSON.stringify(m.value.messages[2])).toContain(REDACTED);
 	});
 
+	test("class instances and byte arrays survive a masked rebuild", () => {
+		class Asset {
+			constructor(readonly data: Uint8Array) {}
+		}
+		const asset = new Asset(new Uint8Array([1, 2, 3]));
+		const m = maskDeep({ parts: [{ type: "text", text: `leaked ${githubToken}` }, { type: "media", media: asset }] });
+		expect(m.count).toBe(1);
+		expect(m.value.parts[1]!.media).toBe(asset);
+	});
+
 	test("an unchanged payload comes back as the same object", () => {
 		const payload = { a: ["nothing here"] };
 		expect(maskDeep(payload).value).toBe(payload);

@@ -83,7 +83,7 @@ dotfiles/
 | Something that differs per Linux distro | `home-omarchy/` or `home-cachyos/`; packages in `packages/omarchy.txt`, `cachyos.txt`, `cachyos-aur.txt` |
 | A skill | edit in **`~/Projects/skills`** (separate repo); vendored syncs happen there too (its `VENDORING.md`) |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
-| Agent secret guardrails (what agents may run, what gets masked before the model sees it) | `home/.config/secret-guard/guard.ts` — the rules, shared by every agent; adapters only wire them in (Pi: `home/.pi/agent/extensions/secret-guard.ts`). Values to mask by value: `bun ~/.config/secret-guard/learn.ts` (hashes only, in `~/.local/state/secret-guard/`). Tests: `bun run test` |
+| Agent secret guardrails (what agents may run, what gets masked before the model sees it) | `home/.config/secret-guard/guard.ts` — the rules, shared by every agent; adapters only wire them in (Pi: `home/.pi/agent/extensions/secret-guard.ts`; OpenCode: `home/.config/opencode/plugins/secret-guard/`, a v2 plugin the server autoloads from `plugins/` — listing it in `opencode.json` too loads it twice; it covers the Claude Agent provider too). Claude Code has no adapter yet. Values to mask by value: `bun ~/.config/secret-guard/learn.ts` (hashes only, in `~/.local/state/secret-guard/`). Tests: `bun run test` |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
 | Homelab / tailnet DNS on the Mac (Twingate + Tailscale) | `config/resolver/` (one file per domain → `/etc/resolver/`), `bin/resolver-install`; `dotfiles resolver {install,status,uninstall}`. Twingate keeps the default resolver (work), so Tailscale DNS is off; homelab domains go to CoreDNS, the tailnet to MagicDNS |
@@ -226,7 +226,7 @@ sequences when piped.
   `idiomatic_version_file_enable_tools = ["node"]`. Vite+ is not installed globally;
   projects that use it declare `vite-plus` locally.
   - **`brew "node"` is deliberately NOT in `packages/bundle`, but IS installed and can't
-    be removed.** Several formulae depend on it (`opencode`, `mongosh`,
+    be removed.** Several formulae depend on it (`mongosh`,
     `prettier`, `typescript`, `tailwindcss`, `jupyterlab`, …), and `brew uninstall node`
     refuses. Those CLIs hardcode `#!/opt/homebrew/opt/node/bin/node`, so mise cannot satisfy
     their dependency and changing the project Node cannot break them. Strip `brew "node"`
@@ -243,6 +243,11 @@ sequences when piped.
   two installs means PATH order decides which Pi runs, and the stale one wins silently.
   mise resolves `latest` once, at install; `dotfiles update` → Language tools runs
   `mise upgrade` so it doesn't freeze.
+- **OpenCode is managed by mise too** (`opencode = "latest"`, npm `@opencode/cli`), not
+  Homebrew. It was in both until 2026-10: mise's shim won on PATH, so the newer brew copy
+  never ran. Don't re-add `brew "opencode"` (the `opencode-desktop` cask is the separate
+  Desktop app and stays). mise holds back releases younger than 24h
+  (`minimum_release_age`), so a release lands the day after it ships.
 - **1Password SSH** — no keygen; `dotfiles ssh` binds `IdentityAgent`; git signs via `op-ssh-sign`.
 - **Two shells** — zsh is the current login shell; fish is being adopted (starship prompt shared, so both look identical). See `home/.config/fish/AGENTS.md`.
 

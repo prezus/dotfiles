@@ -1,9 +1,9 @@
 /**
  * Secret Guard: the rules, shared by every agent.
  *
- * Pi (~/.pi/agent/extensions/secret-guard.ts) and Claude Code (~/.claude/hooks/) are
- * thin adapters over this file, so a rule added here guards both. It has no agent
- * imports and no side effects.
+ * Pi (~/.pi/agent/extensions/secret-guard.ts) and OpenCode
+ * (~/.config/opencode/plugins/secret-guard/) are thin adapters over this file, so a
+ * rule added here guards both. It has no agent imports and no side effects.
  *
  * - riskyBash(): commands to refuse or ask about before they run.
  * - isSecretPath(): files whose contents are secrets.
@@ -332,10 +332,17 @@ export function maskText(text: string, options: MaskOptions = {}): { text: strin
 // Provider payloads carry opaque blobs the provider verifies byte for byte: a
 // reasoning signature, encrypted reasoning, base64 media. Masking inside one
 // breaks the request, and a token-shaped match there is chance, not a leak (the
-// first audit's four "GitHub tokens" were exactly this).
-const OPAQUE_KEYS = new Set(["signature", "thinkingSignature", "thoughtSignature", "thought_signature", "encrypted_content", "encryptedContent"]);
+// first audit's four "GitHub tokens" were exactly this). `encrypted` and
+// `providerMetadata` are OpenCode's names for the same blobs.
+const OPAQUE_KEYS = new Set(["signature", "thinkingSignature", "thoughtSignature", "thought_signature", "encrypted_content", "encryptedContent", "encrypted", "providerMetadata"]);
 const isMedia = (obj: Record<string, unknown>): boolean =>
 	"media_type" in obj || "mimeType" in obj || "mime_type" in obj || obj.type === "base64";
+// Only JSON-shaped objects are rebuilt. A class instance or a Uint8Array (OpenCode's
+// media assets and image bytes) would lose its prototype and come back corrupt.
+const isPlain = (v: object): boolean => {
+	const proto = Object.getPrototypeOf(v);
+	return proto === Object.prototype || proto === null;
+};
 
 /** maskText over every string in a JSON-like value. Returns the same object when nothing matched. */
 export function maskDeep<T>(value: T, options: MaskOptions = {}): { value: T; count: number } {
@@ -347,7 +354,7 @@ export function maskDeep<T>(value: T, options: MaskOptions = {}): { value: T; co
 			return m.count > 0 ? m.text : v;
 		}
 		if (Array.isArray(v)) return v.map(walk);
-		if (v && typeof v === "object") {
+		if (v && typeof v === "object" && isPlain(v)) {
 			const obj = v as Record<string, unknown>;
 			const media = isMedia(obj);
 			return Object.fromEntries(

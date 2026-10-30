@@ -1,17 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
+  "plugins": [
     "@tarquinen/opencode-dcp@latest"
-  ],
-  "mcp": {
-    "pencil": {
-      "command": [
-        "/Applications/Pencil.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-arm64",
-        "--app",
-        "desktop"
-      ],
-      "enabled": true,
-      "type": "local"
-    }
-  }
+  ]
 }

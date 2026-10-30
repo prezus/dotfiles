@@ -1,5 +1,4 @@
 {
   "$schema": "https://opencode.ai/tui.json",
-  "theme": "catppuccin-macchiato",
-  "plugin": ["./plugins/zed.ts"]
+  "theme": "catppuccin-macchiato"
 }

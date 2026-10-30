@@ -12,17 +12,21 @@ test("OpenCode /zed launches the project as one argument and reports launch fail
     const argsFile = join(dir, "args");
     const project = join(dir, "project with spaces; $literal");
     await writeFile(join(dir, command), '#!/bin/sh\nprintf "%s\\n" "$@" > "$ZED_ARGS"\nexit "$ZED_EXIT"\n', { mode: 0o755 });
-    const plugin = new URL("../../home/.config/opencode/plugins/zed.ts", import.meta.url).href;
+    const plugin = new URL("../../home/.config/opencode/plugins/zed/tui.ts", import.meta.url).href;
+    // OpenCode resolves @opencode/plugin/tui at runtime; outside it, define is the identity.
     const script = `
-      import plugin from ${JSON.stringify(plugin)};
+      Bun.plugin({ setup(build) {
+        build.module("@opencode/plugin/tui", () => ({ loader: "object", exports: { Plugin: { define: (p) => p } } }));
+      } });
+      const { default: plugin } = await import(${JSON.stringify(plugin)});
       let command;
       const result = new Promise(async (resolve) => {
-        await plugin.tui({
-          keymap: { registerLayer(layer) { command = layer.commands[0]; } },
-          state: { path: { directory: ${JSON.stringify(project)} } },
-          ui: { dialog: { clear() {} }, toast: resolve },
+        await plugin.setup({
+          keymap: { layer(factory) { command = factory().commands[0]; } },
+          location: { directory: ${JSON.stringify(project)} },
+          ui: { toast: { show: resolve }, format: { path: (p) => p } },
         });
-        if (command.slashName !== "zed") throw new Error("Missing /zed command");
+        if (command.slash?.name !== "zed") throw new Error("Missing /zed command");
         command.run();
       });
       console.log(JSON.stringify(await result));
