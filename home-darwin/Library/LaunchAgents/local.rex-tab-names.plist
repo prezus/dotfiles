@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Names Rex tabs "repo · branch" by running ~/.config/rex/tab-names.lua for the
-  whole login session. rex do exits when the Rex server goes away (app quit,
-  update), and KeepAlive brings it back once the server is up again.
+  Names Rex tabs "repo · branch", and new sessions after their repo, by running
+  ~/.config/rex/tab-names.lua for the whole login session. rex do exits when
+  the Rex server goes away (app quit, update), and KeepAlive brings it back once
+  the server is up again.
   sh only expands $HOME: a plist can't, and this file is the same on every Mac.
 -->
 <plist version="1.0">

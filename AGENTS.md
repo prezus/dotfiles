@@ -76,7 +76,7 @@ dotfiles/
 | SSH config (1Password agent + compat) | **`dotfiles ssh`** — NOT committed (see `src/commands/ssh.ts`) |
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Rex keys / actions / modes | `home/.config/rex/init.lua` (Lua; `require` siblings). Not watched — `rex config check`, then `rex config reload`. Runtime state is in `~/Library/Application Support/rex`, never here |
-| Rex tab names ("repo · branch") | `home/.config/rex/tab-names.lua` — a `rex do --all` event script, since init.lua is never sent events. Kept running by `home-darwin/Library/LaunchAgents/local.rex-tab-names.plist`; stow links it, launchd loads it at login (first time: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.rex-tab-names.plist`) |
+| Rex tab names ("repo · branch") and new-session names ("repo", once, until an agent or you rename it) | `home/.config/rex/tab-names.lua` — a `rex do --all` event script, since init.lua is never sent events. Kept running by `home-darwin/Library/LaunchAgents/local.rex-tab-names.plist`; stow links it, launchd loads it at login (first time: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.rex-tab-names.plist`) |
 | Tiling WM (macOS) | `home-darwin/.config/aerospace/aerospace.toml` |
 | Tiling WM (Omarchy) | `home-omarchy/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
