@@ -95,7 +95,12 @@ Pi 1.4 has MCP built in. `agent/mcp.json` lists user-level servers; edit it with
 to `codemode` exposure: codemode scripts can call their tools, but the tools are not
 declared to the model up front.
 
-- **`executor`**: `https://executor.decepticon.io/mcp`, the same server Claude Code
-  has for `decepticon.io`. OAuth applies, so each machine signs in once with
+This file is also the manifest for the other agents: `dotfiles mcp install` copies
+each bare-URL entry into Claude Code (user scope) and Codex, and `dotfiles doctor`
+reports any client that is missing one or needs sign-in. An entry with `headers`,
+`oauth`, `env` or a `command` is never copied, so keep credentials out of it.
+
+- **`executor`**: `https://executor.decepticon.io/mcp`, the gateway every agent uses
+  for hosted tools (Outline, and Firecrawl once it runs). OAuth applies, so each machine signs in once with
   `pi mcp login executor`. Tokens go to `agent/mcp-auth.json`, which stays local.
   `pi mcp list` checks it.

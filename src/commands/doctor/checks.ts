@@ -15,6 +15,7 @@ import { Result } from "better-result"
 import { Schema } from "effect"
 import { systemLoginShell } from "../fish.ts"
 import { goBinDir } from "../langtools.ts"
+import { describeRow, inspect, readManifest } from "../mcp.ts"
 import { readPiGitPackageStatuses, readPiPluginStatuses } from "../pi.ts"
 import { readdir } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
@@ -277,6 +278,32 @@ const agentChecks: Check[] = AGENT_TOOLS.map(({ bin, label, formula }) => ({
     return { status: "ok", message: `${label} — ${version || "installed"} (${path})` }
   },
 }))
+
+/**
+ * Remote MCP servers in the clients whose config is not tracked. Reports state
+ * only: each client is asked about one server by name, never read or printed.
+ */
+const mcpClientsCheck: Check = {
+  id: "mcp-clients",
+  section: "Tooling",
+  label: "MCP servers",
+  run: async () => {
+    const manifest = await readManifest()
+    if (manifest._tag === "Left") return { status: "warn", message: `MCP servers — ${manifest.left}` }
+    if (manifest.right.servers.length === 0) return { status: "ok", message: "" }
+    const rows = (await inspect(manifest.right.servers)).map(describeRow)
+    const bad = rows.filter((row) => !row.ok)
+    const names = manifest.right.servers.map((server) => server.name).join(", ")
+    return {
+      status: bad.length === 0 ? "ok" : "warn",
+      message:
+        bad.length === 0
+          ? `MCP servers — ${names} in every installed client`
+          : `MCP servers — ${bad.length} client entr${bad.length === 1 ? "y" : "ies"} need attention`,
+      extra: bad.map((row) => ({ kind: "warn" as const, text: row.text })),
+    }
+  },
+}
 
 // ─── Shell ──────────────────────────────────────────────────────────
 
@@ -1102,6 +1129,7 @@ const ALL_CHECKS: Check[] = [
   goCheck,
   miseCheck,
   ...agentChecks,
+  mcpClientsCheck,
   fishCheck,
   fisherCheck,
   loginShellCheck,

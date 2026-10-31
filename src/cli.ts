@@ -38,10 +38,10 @@ type Command = {
 const ALL_COMMANDS: Command[] = [
   {
     name: "init",
-    description: "Full setup: packages/rust/bun/Plannotator/stow/mise/Pi/ssh/fish/skills",
+    description: "Full setup: packages/rust/bun/Plannotator/stow/mise/Pi/MCP/ssh/fish/skills",
     help:
-      "Full setup. macOS: brew → rust → packages → bun → Plannotator → stow → mise → Pi → ssh → fish → skills\n" +
-      "Linux: pacman/yay → rust → bun → Plannotator → stow → mise → Pi → ssh → fish → skills → omarchy includes",
+      "Full setup. macOS: brew → rust → packages → bun → Plannotator → stow → mise → Pi → MCP → ssh → fish → skills\n" +
+      "Linux: pacman/yay → rust → bun → Plannotator → stow → mise → Pi → MCP → ssh → fish → skills → omarchy includes",
     run: async () => (await import("./commands/init.ts")).init(),
   },
   {
@@ -153,6 +153,14 @@ const ALL_COMMANDS: Command[] = [
     name: "pi",
     description: "install | update | status | verify pinned Pi plugins",
     run: async (args) => (await import("./commands/pi.ts")).piPlugins(args),
+  },
+  {
+    name: "mcp",
+    description: "install | status remote MCP servers in Claude Code and Codex",
+    help:
+      "Mirror the bare-URL servers in home/.pi/agent/mcp.json (Pi's, via stow) into\n" +
+      "Claude Code (user scope) and Codex. install | status; sign-in stays per client.",
+    run: async (args) => (await import("./commands/mcp.ts")).mcp(args),
   },
   {
     name: "check-packages",

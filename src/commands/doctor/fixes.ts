@@ -12,6 +12,7 @@ import { join } from "node:path"
 import { FISH_TOOL_COMPLETIONS, HOME_DIR, PACKAGES_DIR } from "../../lib/env.ts"
 import { commandExists, probe, runInteractiveCode, which } from "../../lib/exec.ts"
 import { findBrokenOwnedLinks } from "../../lib/owned.ts"
+import { mcp } from "../mcp.ts"
 import { skills } from "../skills.ts"
 
 export type Fix = {
@@ -130,6 +131,7 @@ const FIXES = {
     "Pi plugins reconciled",
   ),
 
+  "mcp-clients": runsCommand("add MCP servers to clients", () => mcp(["install"]), "MCP servers added"),
   "stow-drift": runsCommand(
     "re-stow home/ + overlay",
     async () => (await import("../stow.ts")).stow([]),

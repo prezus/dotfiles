@@ -84,6 +84,7 @@ dotfiles/
 | A skill | edit in **`~/Projects/skills`** (separate repo); vendored syncs happen there too (its `VENDORING.md`) |
 | Pi agent config / plugins | `home/.pi/agent/`; plugins: `dotfiles pi {install,status,update,verify}` |
 | Agent secret guardrails (what agents may run, what gets masked before the model sees it) | `home/.config/secret-guard/guard.ts` — the rules, shared by every agent; adapters only wire them in (Pi: `home/.pi/agent/extensions/secret-guard.ts`; OpenCode: `home/.config/opencode/plugins/secret-guard/`, a v2 plugin the server autoloads from `plugins/` — listing it in `opencode.json` too loads it twice; it covers the Claude Agent provider too). Claude Code has no adapter yet. Values to mask by value: `bun ~/.config/secret-guard/learn.ts` (hashes only, in `~/.local/state/secret-guard/`). Tests: `bun run test` |
+| Remote MCP servers for every agent | `home/.pi/agent/mcp.json` is the manifest (Pi reads it via stow); `dotfiles mcp install` mirrors its bare-URL entries into Claude Code (user scope) and Codex, whose configs are untracked. Entries with `headers`/`oauth`/`env`/`command` are refused, since the repo is public; sign-in stays per client. `executor` (`executor.decepticon.io`) is the one gateway: hosted tools are added there, not per client |
 | Claude Code settings (model, theme, enabled plugins, hooks) | `home/.claude/settings.json` — stowed per-file into a real `~/.claude`. `~/.claude.json` (OAuth account, per-project state) and `plugins/` are Claude Code's, never tracked |
 | Opt-in macOS quarantine cleanup | `bin/unquarantine`, `config/unquarantine.conf`, `LaunchAgents/local.unquarantine.plist`; `dotfiles unquarantine {install,status,uninstall}` |
 | Homelab / tailnet DNS on the Mac (Twingate + Tailscale) | `config/resolver/` (one file per domain → `/etc/resolver/`), `bin/resolver-install`; `dotfiles resolver {install,status,uninstall}`. Twingate keeps the default resolver (work), so Tailscale DNS is off; homelab domains go to CoreDNS, the tailnet to MagicDNS |
@@ -189,7 +190,7 @@ the file*. **No third module branches on platform to build a path.** Importing
 ```
 dotfiles                 Opens the DASHBOARD — machine status + every command one key away.
                          Piped, redirected, under CI or --plain it prints help instead.
-dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → hooks → mise → Pi → ssh → fish → skills
+dotfiles init            Full setup: brew → rust → packages → bun → Plannotator → stow → hooks → mise → Pi → MCP → ssh → fish → skills
 dotfiles update          Multi-select: repos / brew / language tools / re-stow / Pi plugins
                          --all or --only=repos,brew for non-interactive runs
 dotfiles doctor          Health check. Interactive panel on a tty (⏎ fixes the selected
@@ -210,6 +211,7 @@ dotfiles rust            rustup toolchains/targets from packages/rust.txt (+ ESP
 dotfiles fish            Default login shell + fisher plugins + tool completions
 dotfiles skills          install | status   (links from prezus/skills; syncing lives in that repo)
 dotfiles pi              install | update | status | verify   (exact pins in Pi settings)
+dotfiles mcp             install | status   (Pi's mcp.json → Claude Code + Codex; doctor checks it)
 dotfiles check-packages / retry-failed / edit
 ```
 

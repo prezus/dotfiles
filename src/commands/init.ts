@@ -19,6 +19,7 @@ import { pacmanCmd } from "./pacman.ts"
 import { langTools } from "./langtools.ts"
 import { installPackages } from "./packages.ts"
 import { plannotator } from "./plannotator.ts"
+import { mcp } from "./mcp.ts"
 import { piPlugins } from "./pi.ts"
 import { applyRustList, installRustEsp, installRustup } from "./rust.ts"
 import { skills } from "./skills.ts"
@@ -71,6 +72,12 @@ function sharedTail(): Step[] {
       id: "pi",
       title: "Pi plugins",
       run: () => fromExitCode(() => piPlugins(["install"])),
+    },
+    {
+      // After stow (the manifest is stowed) and after mise/packages (the clients).
+      id: "mcp",
+      title: "MCP servers (Claude Code, Codex)",
+      run: () => fromExitCode(() => mcp(["install"])),
     },
     { id: "ssh", title: "SSH config", run: () => fromExitCode(ssh) },
     { id: "fish", title: "Fish shell", run: () => fromExitCode(fish) },
