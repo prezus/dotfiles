@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Holds a new cmd+shift+up "prompt" pane at 25% (the app balances it to 50%), by running
+  ~/.config/rex/prompt-split.lua for the whole login session. rex do exits when
+  the Rex server goes away (app quit, update), and KeepAlive brings it back once
+  the server is up again.
+  sh only expands $HOME: a plist can't, and this file is the same on every Mac.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.rex-prompt-split</string>
+  <!-- Lists this under Rex in System Settings > Login Items, not as a bare "sh". -->
+  <key>AssociatedBundleIdentifiers</key><string>com.superlogical.rex</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>exec "$HOME/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex" do --all --autostart=false "$HOME/.config/rex/prompt-split.lua"</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <!-- While Rex isn't running, retry twice a minute rather than spin. -->
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardErrorPath</key><string>/tmp/local.rex-prompt-split.log</string>
+</dict>
+</plist>

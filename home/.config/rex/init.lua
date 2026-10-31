@@ -23,3 +23,5 @@ rex.action({
 		rex.client.queue("client.theme.import", { path = themes .. "catppuccin-macchiato" })
 	end,
 })
+
+require("splits")

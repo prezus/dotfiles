@@ -77,6 +77,7 @@ dotfiles/
 | Neovim plugin/keymap | `home/.config/nvim/` (init.lua; full config not vendored) |
 | Rex keys / actions / modes | `home/.config/rex/init.lua` (Lua; `require` siblings). Not watched — `rex config check`, then `rex config reload`. Runtime state is in `~/Library/Application Support/rex`, never here |
 | Rex tab names ("repo · branch") and new-session names ("repo", once, until an agent or you rename it) | `home/.config/rex/tab-names.lua` — a `rex do --all` event script, since init.lua is never sent events. Kept running by `home-darwin/Library/LaunchAgents/local.rex-tab-names.plist`; stow links it, launchd loads it at login (first time: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.rex-tab-names.plist`) |
+| Rex 25/75 prompt split (cmd+shift+up over an agent: a shell above it, a quarter of its height; other panes split evenly) | `home/.config/rex/splits.lua` (action + binding) and `home/.config/rex/prompt-split.lua` — the app balances new splits to 50/50 and init.lua has no timers, so this `rex do --all` script resets a new `prompt`-labelled pane to 25%. Kept running by `home-darwin/Library/LaunchAgents/local.rex-prompt-split.plist` (first time: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.rex-prompt-split.plist`) |
 | Tiling WM (macOS) | `home-darwin/.config/aerospace/aerospace.toml` |
 | Tiling WM (Omarchy) | `home-omarchy/.config/hypr/bindings.lua` — mirrors the aerospace motion set |
 | Something that differs per OS | the matching `home-darwin/` or `home-linux/` overlay — see PLATFORMS |
