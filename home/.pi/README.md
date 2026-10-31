@@ -1,3 +1,5 @@
+| `agent/mcp.json` | yes | user-level MCP servers (`executor`); no credentials in it |
+| `agent/mcp-auth.json` | no — **local** | OAuth tokens from `pi mcp login` — never commit |
 # .pi
 
 Global [Pi](https://github.com/earendil-works/pi) agent config, tracked here and
@@ -85,3 +87,15 @@ verify skills (including the Cloudflare set), work in the **skills repo**, not h
 `agent/settings.json` → `"theme": "catppuccin-macchiato"`, defined in
 `agent/themes/catppuccin-macchiato.json`. Theme name = filename without `.json`.
 Reload in Pi with `/reload` (or restart) after editing.
+
+## MCP
+
+Pi 1.4 has MCP built in. `agent/mcp.json` lists user-level servers; edit it with
+`pi mcp add|remove`, which write through the symlink into this repo. Servers default
+to `codemode` exposure: codemode scripts can call their tools, but the tools are not
+declared to the model up front.
+
+- **`executor`**: `https://executor.decepticon.io/mcp`, the same server Claude Code
+  has for `decepticon.io`. OAuth applies, so each machine signs in once with
+  `pi mcp login executor`. Tokens go to `agent/mcp-auth.json`, which stays local.
+  `pi mcp list` checks it.

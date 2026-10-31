@@ -106,6 +106,8 @@ home*/.pi/web-search.json
 #     and extension config. auth.json + sessions/ stay LOCAL and uncommitted.
 home*/.pi/agent/*
 !home*/.pi/agent/settings.json
+#     MCP servers only; OAuth tokens land in mcp-auth.json, which stays ignored.
+!home*/.pi/agent/mcp.json
 !home*/.pi/agent/themes/
 !home*/.pi/agent/extensions/
 home*/.pi/agent/extensions/*

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "executor": {
+      "url": "https://executor.decepticon.io/mcp",
+      "description": "Executor on decepticon.io: run TypeScript against the tools and integrations configured there"
+    }
+  }
+}
