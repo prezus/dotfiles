@@ -10,9 +10,11 @@
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { PACKAGES_DIR } from "../lib/env.ts"
+import { IS_DARWIN } from "../lib/platform.ts"
 import { commandExists, env, probe, runInteractiveCode } from "../lib/exec.ts"
 import type { StepOutcome } from "../lib/steps.ts"
 import { printInfo, printSuccess, printWarning } from "../lib/ui.ts"
+import { installCommand, installedPwshModules, pwshDrift, readPwshManifest } from "./pwsh.ts"
 
 export const CARGO_MANIFEST = join(PACKAGES_DIR, "cargo.txt")
 export const GO_MANIFEST = join(PACKAGES_DIR, "go.txt")
@@ -82,8 +84,13 @@ async function installedCrates(): Promise<Set<string>> {
 }
 
 export async function langTools(): Promise<StepOutcome> {
-  const [crates, modules] = await Promise.all([readList(CARGO_MANIFEST), readList(GO_MANIFEST)])
-  if (crates.length === 0 && modules.length === 0) {
+  const [crates, modules, psModules] = await Promise.all([
+    readList(CARGO_MANIFEST),
+    readList(GO_MANIFEST),
+    // macOS only for now: Linux machines don't run PowerShell.
+    IS_DARWIN ? readPwshManifest() : Promise.resolve([]),
+  ])
+  if (crates.length === 0 && modules.length === 0 && psModules.length === 0) {
     return { ok: true, detail: "no language tools declared" }
   }
 
@@ -129,6 +136,27 @@ export async function langTools(): Promise<StepOutcome> {
           installed++
         } else {
           printWarning(`go install failed: ${module}`)
+          failed++
+        }
+      }
+    }
+  }
+
+  if (psModules.length > 0) {
+    // brew "powershell" in packages/bundle provides it; the brew step runs first.
+    if (!(await commandExists("pwsh"))) {
+      printInfo("pwsh not installed — skipping PowerShell modules")
+    } else {
+      const have = await installedPwshModules()
+      const { missing } = pwshDrift(psModules, have ?? [])
+      if (missing.length === 0) printSuccess(`${psModules.length} PowerShell module(s) already installed`)
+      for (const name of missing) {
+        printInfo(`Installing PowerShell module ${name}`)
+        if ((await runInteractiveCode(installCommand(name))) === 0) {
+          printSuccess(`pwsh: ${name}`)
+          installed++
+        } else {
+          printWarning(`pwsh module failed: ${name}`)
           failed++
         }
       }

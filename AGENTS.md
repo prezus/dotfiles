@@ -48,6 +48,7 @@ dotfiles/
 │   ├── arch.ignore           # same role as bundle.ignore, for pacman
 │   ├── rust.txt              # rustup toolchains/components/targets (`dotfiles rust`)
 │   ├── cargo.txt go.txt      # crates + go tools, BOTH platforms (`dotfiles lang-tools`)
+│   ├── pwsh.txt              # PowerShell modules (PSGallery, CurrentUser scope) — macOS only, same command
 │   └── bun-global.txt        # JS-only global CLIs with no native package
 ├── .githooks/ .gitleaks.toml # secret scan on commit + push — see GIT WORKFLOW
 ├── AGENTS.md README.md INSTALL.md   # this file + human docs + dotfiles spec
@@ -62,6 +63,7 @@ dotfiles/
 | Add a CLI tool (Linux) | add the bare name to `packages/arch.txt` (or `aur.txt`) |
 | Add a JS global with **no** native package | add to `packages/bun-global.txt` (installed by `dotfiles bun`) |
 | Add a cargo crate or go tool | `packages/cargo.txt` / `packages/go.txt` — cross-platform, NOT the Brewfile |
+| Add a PowerShell module (macOS only) | `packages/pwsh.txt` — top-level names only; dependencies follow. `dotfiles lang-tools` installs, `dotfiles update` → Language tools upgrades and prunes old versions, doctor reports missing + untracked |
 | Find out what a key actually sends | `dotfiles keys` (`--raw` on Linux reads below the compositor) |
 | Compare two machines' shortcuts | `dotfiles keys record <name>` on each, then `dotfiles keys diff <a> <b>` |
 | Silence a package in the drift check | add a glob to `packages/bundle.ignore` — only for things that must NEVER be tracked |

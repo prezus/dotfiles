@@ -1,0 +1,13 @@
+# PowerShell modules, installed per user from PSGallery with PSResourceGet.
+# macOS ONLY for now: lang-tools, update and doctor all skip this file on Linux.
+#
+# pwsh itself comes from packages/bundle (brew "powershell"), the modules from here.
+# List only what you asked for. Dependencies (Microsoft.Graph's ~40 submodules)
+# come along with their parent, and doctor does not report them as untracked.
+#
+# `dotfiles lang-tools` installs what is missing. `dotfiles update` → Language
+# tools upgrades these and removes superseded versions of every user-scope module.
+
+ExchangeOnlineManagement
+Microsoft.Graph
+MicrosoftTeams

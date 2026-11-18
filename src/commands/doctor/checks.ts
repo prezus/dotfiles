@@ -767,6 +767,45 @@ const goToolsCheck: Check = {
   },
 }
 
+// Both directions in one row: PSResourceGet keeps no record of what was asked
+// for, so an ad-hoc Install-PSResource is otherwise invisible, like an ad-hoc
+// `brew install`. Modules another installed module requires don't count.
+const pwshModulesCheck: Check = {
+  id: "pwsh-modules",
+  section: "Packages",
+  label: "packages/pwsh.txt",
+  platforms: ["darwin"],
+  run: async () => {
+    const { installedPwshModules, pwshDrift, readPwshManifest } = await import("../pwsh.ts")
+    const declared = await readPwshManifest()
+    if (declared.length === 0) return { status: "info", message: "" }
+    if (!(await commandExists("pwsh")))
+      return { status: "info", message: "packages/pwsh.txt — pwsh not installed" }
+    const installed = await installedPwshModules()
+    if (installed === null)
+      return { status: "warn", message: "packages/pwsh.txt — could not list PowerShell modules" }
+
+    const { missing, untracked } = pwshDrift(declared, installed)
+    const stale = installed.filter((m) => m.versions.length > 1).length
+    if (missing.length === 0 && untracked.length === 0)
+      return {
+        status: "ok",
+        message:
+          `packages/pwsh.txt — all ${declared.length} installed` +
+          (stale > 0 ? ` (${stale} with old versions; dotfiles update prunes them)` : ""),
+      }
+    const raw = (text: string) => ({ kind: "raw" as const, text })
+    return {
+      status: "warn",
+      message: `packages/pwsh.txt — ${missing.length} missing, ${untracked.length} untracked:`,
+      extra: [
+        ...missing.map((m) => raw(`    missing   ${m}`)),
+        ...untracked.map((m) => raw(`    untracked ${m}  (add to packages/pwsh.txt or uninstall)`)),
+      ],
+    }
+  },
+}
+
 const bunGlobalsCheck = manifestCheck(
   "bun-globals",
   "packages/bun-global.txt",
@@ -1146,6 +1185,7 @@ const ALL_CHECKS: Check[] = [
   untrackedPackagesCheck,
   cargoToolsCheck,
   goToolsCheck,
+  pwshModulesCheck,
   bunGlobalsCheck,
   pathCheck,
   espToolchainCheck,

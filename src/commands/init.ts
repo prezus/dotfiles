@@ -113,7 +113,7 @@ function linuxSteps(): Step[] {
       // it. Placing it after was the bug that made `dotfiles rust` report
       // "espup not installed yet (comes from packages/bundle)" on Linux.
       id: "lang-tools",
-      title: "Language tools (cargo/go)",
+      title: "Language tools (cargo/go/pwsh)",
       run: () => langTools(),
     },
     {
@@ -164,7 +164,7 @@ function darwinSteps(): Step[] {
       // it. Placing it after was the bug that made `dotfiles rust` report
       // "espup not installed yet (comes from packages/bundle)" on Linux.
       id: "lang-tools",
-      title: "Language tools (cargo/go)",
+      title: "Language tools (cargo/go/pwsh)",
       run: () => langTools(),
     },
     {

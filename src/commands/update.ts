@@ -11,6 +11,7 @@ import { IS_DARWIN } from "../lib/platform.ts"
 import { runSteps, type Step, type StepOutcome } from "../lib/steps.ts"
 import { getStepSink, isInteractive, printHeader, printInfo, printSuccess, printWarning } from "../lib/ui.ts"
 import { piPlugins } from "./pi.ts"
+import { pruneCommand, readPwshManifest, updateCommand } from "./pwsh.ts"
 import { stow } from "./stow.ts"
 
 export type UpdateTask = {
@@ -33,7 +34,7 @@ export const UPDATE_TASKS: UpdateTask[] = [
   {
     id: "extras",
     title: "Language tools",
-    description: "mise, rustup, cargo, go, bun, fisher",
+    description: "mise, rustup, cargo, go, bun, fisher, pwsh modules",
     default: true,
   },
   { id: "stow", title: "Re-stow", description: "re-symlink home/ → $HOME", default: true },
@@ -50,6 +51,7 @@ export type UpdateRuntime = {
   runInteractiveCode: typeof runInteractiveCode
   probe: typeof probe
   readBundle: typeof readBundle
+  readPwshManifest: typeof readPwshManifest
 }
 
 const defaultUpdateRuntime: UpdateRuntime = {
@@ -57,6 +59,7 @@ const defaultUpdateRuntime: UpdateRuntime = {
   runInteractiveCode,
   probe,
   readBundle,
+  readPwshManifest,
 }
 
 /** Package sources `brew upgrade` does not touch. Attempts all and reports all failures. */
@@ -92,6 +95,17 @@ export async function updateExtras(runtime: UpdateRuntime = defaultUpdateRuntime
   if (await runtime.commandExists("bun")) {
     printInfo("bun update -g...")
     await runOne("bun", ["bun", "update", "-g"])
+  }
+  // macOS only for now, like the manifest itself.
+  if (IS_DARWIN && (await runtime.commandExists("pwsh"))) {
+    const declared = await runtime.readPwshManifest()
+    if (declared.length > 0) {
+      printInfo(`updating ${declared.length} PowerShell module(s)...`)
+      await runOne("pwsh", updateCommand(declared))
+      // Only after a clean update: a failed one may leave the old version as
+      // the only working copy.
+      if (!failed.includes("pwsh")) await runOne("pwsh-prune", pruneCommand())
+    }
   }
   if (await runtime.commandExists("fish")) {
     const fisher = await runtime.probe(["fish", "-c", "type -q fisher"])

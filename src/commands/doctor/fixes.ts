@@ -150,6 +150,12 @@ const FIXES = {
     "language tools installed",
   ),
 
+  "pwsh-modules": runsCommand(
+    "install missing PowerShell modules",
+    async () => (await import("../langtools.ts")).langToolsCmd(),
+    "language tools installed",
+  ),
+
   "bun-globals": runsCommand(
     "install bun globals",
     async () => (await import("../bunglobals.ts")).bunGlobals(),
