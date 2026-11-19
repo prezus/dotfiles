@@ -32,8 +32,9 @@ export type PiPluginStatus = PiPlugin & {
 
 /**
  * One git-hosted Pi package declared in the tracked settings. Pi clones and
- * checks these out itself, so this side only pins, checks, and asks Pi to
- * reconcile; it never touches the clone.
+ * checks these out itself, so this side pins, checks, and asks Pi to
+ * reconcile. The one thing it adds to the clone is the local tag ref Pi's
+ * fetch leaves out (see `reconcileGitPackages`).
  */
 export type PiGitPackage = {
   readonly source: string
@@ -368,13 +369,22 @@ async function install(options: PiPluginOptions): Promise<number> {
     }
   }
 
-  const code = await reconcileGitPackages(settings.value.gitPackages, runtime)
+  const code = await reconcileGitPackages(settings.value.gitPackages, options.gitDir ?? DEFAULT_GIT_DIR, runtime)
   if (code !== 0) return code
   return await verify(options)
 }
 
-/** Ask Pi to clone or check out each git package at the ref the settings name. */
-async function reconcileGitPackages(packages: readonly PiGitPackage[], runtime: PiPluginRuntime): Promise<number> {
+/**
+ * Ask Pi to clone or check out each git package at the ref the settings name.
+ * Pi fetches a tag into FETCH_HEAD only, so a clone made at an older tag never
+ * gains a ref for the new one, and `verify` (which resolves the pin offline,
+ * inside the clone) would report it off-pin. Fetch that tag ref afterwards.
+ */
+async function reconcileGitPackages(
+  packages: readonly PiGitPackage[],
+  gitDir: string,
+  runtime: PiPluginRuntime,
+): Promise<number> {
   if (packages.length === 0) return 0
   if (!(await runtime.commandExists("pi"))) {
     printError("Pi is required to install git Pi packages")
@@ -386,6 +396,12 @@ async function reconcileGitPackages(packages: readonly PiGitPackage[], runtime: 
     if (code !== 0) {
       printError(`Pi could not install ${pkg.source}`)
       return code
+    }
+    if (pkg.ref && !/^[0-9a-f]{40}$/.test(pkg.ref)) {
+      const tag = `refs/tags/${pkg.ref}`
+      const clone = join(gitDir, pkg.repo)
+      const fetched = await runtime.probe(["git", "-C", clone, "fetch", "--quiet", "--no-tags", "origin", `+${tag}:${tag}`])
+      if (!fetched.ok) printWarning(`Could not fetch tag ${pkg.ref} into ${clone}`)
     }
   }
   return 0
@@ -531,7 +547,7 @@ async function update(argv: readonly string[], options: PiPluginOptions): Promis
   // Pi reconciles git packages from the settings file, so these pins have to
   // move first; a failure puts the original file back.
   const movedGit = next.value.gitPackages.filter((pkg) => [...selected.values()].includes(pkg.source))
-  const gitCode = await reconcileGitPackages(movedGit, runtime)
+  const gitCode = await reconcileGitPackages(movedGit, options.gitDir ?? DEFAULT_GIT_DIR, runtime)
   if (gitCode !== 0) {
     await runtime.writeFile(settingsPath, settings.value.rawText)
     printError("Git package update failed; tracked pins were restored (run `dotfiles pi install` to realign)")
