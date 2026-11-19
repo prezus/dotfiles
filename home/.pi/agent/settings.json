@@ -8,6 +8,7 @@
     "+codemode"
   ],
   "quietStartup": false,
+  "showHardwareCursor": true,
   "showCacheMissNotices": true,
   "npmCommand": [
     "bun"
@@ -15,12 +16,12 @@
   "packages": [
     "npm:@plannotator/pi-extension@0.29.0",
     "npm:pi-stop@1.3.0",
-    "npm:pi-toggle-skills@0.1.23",
+    "npm:pi-toggle-skills@0.1.25",
     "npm:@ff-labs/pi-fff@0.11.0",
     "npm:@juicesharp/rpiv-ask-user-question@2.15.0",
-    "npm:pi-web-access@0.45.0",
-    "git:github.com/DietrichGebert/ponytail@v5.3.2",
-    "git:github.com/dmmulroy/pi-claude-cli@d1c38af6b4b0d80e3e86ed0d315ca580427e0563"
+    "npm:pi-web-access@0.48.0",
+    "git:github.com/DietrichGebert/ponytail@v5.3.3",
+    "git:github.com/dmmulroy/pi-claude-cli@31e02ea41081b99a6e2f1903eec6c53abad82103"
   ],
   "extensionChangelogVersions": {
     "{\"source\":\"npm:pi-web-access@0.45.0\",\"scope\":\"user\"}": "0.45.0"
