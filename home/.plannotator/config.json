@@ -21,6 +21,7 @@
   "theme": {
     "mode": "dark",
     "light": "plannotator",
-    "dark": "plannotator"
-  }
+    "dark": "catppuccin"
+  },
+  "favicon": "glass"
 }
