@@ -226,7 +226,6 @@ cask "orbstack"
 cask "qmk-toolbox"
 cask "scroll-reverser"
 cask "stats"
-cask "t3-code"
 cask "tailscale-app"
 cask "temurin"
 # tflint left homebrew-core and is now a cask in the vendor's own tap.
