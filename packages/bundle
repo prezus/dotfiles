@@ -12,6 +12,7 @@ tap "nikitabobko/tap", trusted: true
 tap "nikolaeu/numi"
 tap "ory/tap", trusted: true
 tap "oven-sh/bun"
+tap "plannotator/tap", trusted: true
 tap "probe-rs/probe-rs"
 tap "pulumi/tap"
 tap "redpanda-data/tap"
@@ -156,6 +157,7 @@ brew "kdash-rs/kdash/kdash", trusted: true
 brew "nikolaeu/numi/numi-cli", trusted: true
 brew "ory/tap/cli", trusted: true
 brew "oven-sh/bun/bun", trusted: true
+brew "plannotator/tap/plannotator-tui", trusted: true
 brew "probe-rs/probe-rs/probe-rs", trusted: true
 brew "pulumi/tap/esc", trusted: true
 brew "pulumi/tap/pulumi", trusted: true
@@ -209,6 +211,7 @@ cask "font-monaspace-nf"
 cask "font-monaspace-frozen"
 cask "goreleaser/tap/goreleaser"
 cask "headlamp"
+cask "anomalyco/tap/hex"
 cask "iina"
 cask "linear"
 cask "mockoon"
